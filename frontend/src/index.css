@@ -23,4 +23,16 @@
   .btn-primary {
     @apply btn bg-brand hover:bg-brand-hover text-black border-transparent;
   }
+  .kbd {
+    @apply inline-block px-1.5 py-0.5 rounded border border-white/10 bg-bg-elev
+           text-fg-muted text-[10px] font-mono;
+  }
+}
+
+/* Clamp utility (tailwind has line-clamp-3 via plugin; use custom for safety) */
+.line-clamp-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
