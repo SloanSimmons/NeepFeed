@@ -34,6 +34,13 @@ const PostCard = forwardRef(function PostCard(
   const cardRef = useRef(null);
   const [bookmarked, setBookmarked] = useState(!!post.bookmarked);
 
+  // Keep local state in sync with the parent prop — e.g. when the keyboard
+  // shortcut 'b' toggles via App's onBookmark handler, the parent mutates
+  // posts[] and we want the card's icon to follow.
+  useEffect(() => {
+    setBookmarked(!!post.bookmarked);
+  }, [post.bookmarked]);
+
   // Dwell-tracking visibility
   useEffect(() => {
     if (!cardRef.current || !onSeen) return;

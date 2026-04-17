@@ -10,6 +10,10 @@ RUN npm run build
 # ----- Stage 2: python runtime -----
 FROM python:3.12-slim AS runtime
 
+# Install dependencies as root, then drop to an unprivileged user at runtime.
+RUN groupadd --system --gid 1000 neepfeed \
+ && useradd  --system --uid 1000 --gid neepfeed --home-dir /app --shell /usr/sbin/nologin neepfeed
+
 WORKDIR /app
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -26,7 +30,11 @@ RUN pip install -r /app/backend/requirements.txt
 COPY backend/ /app/backend/
 COPY --from=frontend /app/frontend/dist /app/frontend/dist
 
-RUN mkdir -p /app/data
+# Data dir owned by the unprivileged user so SQLite + WAL files write cleanly.
+RUN mkdir -p /app/data \
+ && chown -R neepfeed:neepfeed /app
+
+USER neepfeed
 
 EXPOSE 5000
 

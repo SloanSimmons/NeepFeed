@@ -28,6 +28,11 @@ export function useFeed({
 
   const abortRef = useRef(null);
   const prefetchRef = useRef(null);
+  // Monotonic request generation — responses that arrive after their
+  // generation has been superseded are ignored, so stale prefetches can't
+  // overwrite newer state. Abort handles the common case; generation is
+  // the belt-and-braces defence.
+  const genRef = useRef(0);
   const limit = 25;
 
   const deps = JSON.stringify({ sort, hideNsfw, hideSeen, subreddit, search, source });
@@ -38,19 +43,26 @@ export function useFeed({
     abortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
+    const myGen = ++genRef.current;
     try {
+      let data;
       if (source === 'bookmarks') {
-        return await api.bookmarks({ limit, offset: nextOffset });
+        data = await api.bookmarks({ limit, offset: nextOffset }, { signal: ctrl.signal });
+      } else {
+        const params = { sort, limit, offset: nextOffset };
+        if (hideNsfw) params.hide_nsfw = 'true';
+        if (hideSeen) params.hide_seen = 'true';
+        if (subreddit) params.subreddit = subreddit;
+        if (search) params.q = search;
+        data = await api.feed(params, { signal: ctrl.signal });
       }
-      const params = { sort, limit, offset: nextOffset };
-      if (hideNsfw) params.hide_nsfw = 'true';
-      if (hideSeen) params.hide_seen = 'true';
-      if (subreddit) params.subreddit = subreddit;
-      if (search) params.q = search;
-      const data = await api.feed(params);
+      // Stale-response guard: return a sentinel so callers skip state writes.
+      if (myGen !== genRef.current) {
+        return { stale: true };
+      }
       return data;
     } finally {
-      setLoading(false);
+      if (myGen === genRef.current) setLoading(false);
     }
   }, [deps]);
 
@@ -69,7 +81,7 @@ export function useFeed({
     (async () => {
       try {
         const data = await fetchPage(0);
-        if (cancelled) return;
+        if (cancelled || data.stale) return;
         setPosts(data.posts || []);
         setTotal(data.total || 0);
         setOffset(data.posts?.length || 0);
@@ -93,6 +105,7 @@ export function useFeed({
       const pending = prefetchRef.current;
       prefetchRef.current = null;
       const data = pending ? await pending : await fetchPage(offset);
+      if (data.stale) return;
       setPosts((prev) => {
         const seenIds = new Set(prev.map((p) => p.reddit_id));
         const newOnes = (data.posts || []).filter((p) => !seenIds.has(p.reddit_id));
@@ -113,6 +126,7 @@ export function useFeed({
     reset();
     try {
       const data = await fetchPage(0);
+      if (data.stale) return;
       setPosts(data.posts || []);
       setTotal(data.total || 0);
       setOffset(data.posts?.length || 0);

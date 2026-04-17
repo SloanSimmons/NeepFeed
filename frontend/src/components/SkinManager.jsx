@@ -47,6 +47,14 @@ export default function SkinManager({ skin }) {
         setImportError('Not a valid skin: missing name or variables');
         return;
       }
+      if (obj.version !== 1) {
+        setImportError('Skin version must be 1 (got ' + JSON.stringify(obj.version) + ')');
+        return;
+      }
+      if (typeof obj.variables !== 'object' || Array.isArray(obj.variables)) {
+        setImportError('variables must be a JSON object');
+        return;
+      }
       // Enter preview mode — user can Apply or Cancel from the floating toolbar
       skin.importCustom(obj);
       setImportOpen(false);

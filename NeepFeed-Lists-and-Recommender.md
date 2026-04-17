@@ -2,7 +2,7 @@
 
 > This document extends the base NeepFeed spec. It assumes the core spec (flat subreddit list, feed, scoring, settings) already exists and describes the additions needed for multi-list support and per-list subreddit recommendations.
 
-**Status:** Phase 2 feature — build after the core NeepFeed MVP is working.
+**Status (updated):** Phase split. Data-model + API layer (L1, L2) implemented as of v2 migration. Recommendation engine (L3) and full list UI (L4) deferred pending real Reddit API credentials + daily-drive feedback. The backend exposes all list endpoints; the frontend currently operates against the default "My Feed" list and shows Feed/Bookmarks but not a list selector. See *"Implementation status"* at the bottom for a precise breakdown.
 
 ---
 
@@ -759,3 +759,31 @@ These are explicitly out of scope for this feature but documented for future pla
 - **List-based feed presets** — Quick-switch between list configurations.
 - **Recommendation learning** — Track which recommendations the user adds vs. ignores, use this to improve future recommendations.
 - **Cross-list recommendation deduplication** — If r/coding is recommended for both Tech and Learning, show it once with "recommended by 2 of your lists".
+
+---
+
+## 13. Implementation status
+
+**Shipped (L1 + L2):**
+
+- `lists` table and `list_recommendations` table created.
+- `subscribed_subreddits` rebuilt via the v2 migration with `list_id` FK + composite `(list_id, name)` uniqueness. Default "My Feed" list (id = 1) absorbs all v1-era subs on upgrade.
+- Full list CRUD: `GET/POST /api/lists`, `PATCH/DELETE /api/lists/<id>`.
+- Per-list subreddit management: `GET /api/lists/<id>/subreddits`, `POST /api/lists/<id>/subreddits` (add|remove|toggle), `POST /api/lists/<id>/subreddits/bulk`, `PATCH /api/lists/<id>/subreddits/<name>/weight`.
+- Feed filter: `GET /api/feed?list=all` (default) or `?list=1,3`. Scoring uses MAX weight across list memberships in All Lists mode; EXISTS subquery in SQL filters to specified lists.
+- Collection job deduplicates subs (`SELECT DISTINCT name FROM subscribed_subreddits WHERE active=1`) so the same sub is fetched once even if it belongs to many lists.
+- `/api/config/export` emits v2 format with lists nested; `/api/config/import` accepts both v1 and v2 payloads (v1 payloads load subs into the default list).
+- Recommendations endpoints return `engine_status: "not_implemented"` or HTTP 501 so a future UI can wire against them unconditionally.
+
+**Deferred (L3):**
+
+- No recommendation engine. The `Reddit recommendation API` endpoint referenced in Section 5 was deprecated by Reddit in 2018, so the primary implementation would need to rely on sidebar scraping, which in turn needs real Reddit API credentials. Deferred until PRAW approval lands and we can confirm the scraping pattern against real data.
+
+**Deferred (L4):**
+
+- No list selector in the header. The current frontend shows Feed / Bookmarks mode toggle only.
+- No list management UI in Settings (create / rename / delete / reorder lists).
+- No recommendation cards in SubredditManager.
+- All legacy "flat list" flows continue to work because the legacy `/api/subreddits` endpoints operate on the default list (`list_id = 1`) transparently.
+
+**Weight resolution note:** In the current implementation, the baseline `calculated_score` stored on each post always uses MAX weight across list memberships, regardless of feed filter. When viewing a specific list, posts are filtered in SQL but scores are not recomputed per-list. This is acceptable while L4 is deferred (ranking within a filtered set remains correct); full per-list weight recompute is tracked for L4.

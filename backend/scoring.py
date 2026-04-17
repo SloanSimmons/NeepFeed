@@ -219,45 +219,57 @@ def _apply_diversity_cap(posts: list[dict], cap: float) -> list[dict]:
     return result
 
 
-def _apply_crosspost_dedup(posts: list[dict]) -> list[dict]:
-    """Collapse posts sharing url_hash: keep the highest-scoring, attach
-    `crossposts` metadata listing the others' subs."""
+def _apply_crosspost_dedup(posts: list[dict], sort: str = "calculated") -> list[dict]:
+    """Collapse posts sharing url_hash. The winner depends on the active sort
+    so dedup doesn't reorder against the caller's expectation:
+
+      calculated -> highest calculated_score
+      score      -> highest raw upvotes
+      recency    -> newest (first in sorted list)
+      velocity   -> first in sorted list (caller already velocity-sorted)
+
+    For 'calculated' and 'score', we break ties by picking the first
+    occurrence (stable). For 'recency' and 'velocity', picking the first
+    occurrence in the already-sorted input IS the correct winner.
+    """
+    # Group by hash while preserving first-seen order
+    order: list[str] = []
     by_hash: dict[str, list[dict]] = {}
-    order: list[str | None] = []  # preserve stable order; None for posts without url_hash
+    nonhashed: list[dict] = []
     for p in posts:
         h = p.get("url_hash")
         if not h:
-            order.append(None)
-            by_hash.setdefault(id(p), [p])  # use id as pseudo-key so it's unique
+            nonhashed.append(p)
             continue
         if h not in by_hash:
             order.append(h)
             by_hash[h] = []
         by_hash[h].append(p)
 
+    # Pick a winner per group according to sort
+    def pick(group: list[dict]) -> dict:
+        if sort == "score":
+            return max(group, key=lambda x: (x.get("score") or 0))
+        if sort == "calculated":
+            return max(group, key=lambda x: (x.get("calculated_score") or 0))
+        # recency / velocity / anything else: trust the caller's ordering
+        return group[0]
+
     out: list[dict] = []
-    emitted_hashes: set = set()
     for key in order:
-        if key is None:
-            continue
-        if key in emitted_hashes:
-            continue
         group = by_hash[key]
-        # Highest-scoring post wins
-        best = max(group, key=lambda p: p.get("calculated_score") or 0)
+        best = pick(group)
         others = [g for g in group if g is not best]
         if others:
-            best = {**best, "crossposts": [{"subreddit": o["subreddit"], "reddit_id": o["reddit_id"]} for o in others]}
+            best = {
+                **best,
+                "crossposts": [
+                    {"subreddit": o["subreddit"], "reddit_id": o["reddit_id"]} for o in others
+                ],
+            }
         out.append(best)
-        emitted_hashes.add(key)
 
-    # Re-insert non-hashed posts (they can't be cross-posts since no hash)
-    nonhashed = [p for p in posts if not p.get("url_hash")]
-    if nonhashed:
-        # Preserve original ordering by score
-        out += nonhashed
-
-    # Stable sort by calculated_score (or whatever the caller's sort was — we preserve input order otherwise)
+    out.extend(nonhashed)
     return out
 
 
@@ -310,12 +322,25 @@ def get_feed(conn: sqlite3.Connection, q: FeedQuery) -> dict:
     if hide_seen_effective:
         where.append("NOT EXISTS (SELECT 1 FROM post_state ps WHERE ps.reddit_id=p.reddit_id AND ps.seen_at IS NOT NULL)")
 
-    # Search (FTS5): if q.search, filter to matching reddit_ids
+    # Search (FTS5): if q.search, filter to matching reddit_ids.
+    # User search input is plain text, NOT a raw FTS5 expression. Tokens like
+    # 'OR', 'AND', 'NEAR', unbalanced quotes, and the column: prefix are FTS5
+    # syntax and would either 500 or behave unexpectedly. We tokenize on
+    # whitespace and quote each token so the query becomes a safe ANDed
+    # phrase match.
     if q.search:
-        # FTS MATCH with a safe fallback (wildcard-escape)
-        match = q.search.replace('"', '""')
-        where.append("p.reddit_id IN (SELECT reddit_id FROM posts_fts WHERE posts_fts MATCH ?)")
-        params.append(match)
+        tokens = [
+            t for t in q.search.split()
+            if t and not any(ch in t for ch in '"*:()')
+        ]
+        if tokens:
+            # Each token as a quoted phrase; ANDed together by default.
+            match = " ".join(f'"{t}"' for t in tokens)
+            where.append("p.reddit_id IN (SELECT reddit_id FROM posts_fts WHERE posts_fts MATCH ?)")
+            params.append(match)
+        else:
+            # All tokens filtered out -> no results
+            where.append("1=0")
 
     where_sql = " AND ".join(where)
 
@@ -344,9 +369,9 @@ def get_feed(conn: sqlite3.Connection, q: FeedQuery) -> dict:
         for p in posts:
             p.pop("_velocity", None)
 
-    # Cross-post dedup
+    # Cross-post dedup (winner selection depends on the active sort)
     if dedup_enabled:
-        posts = _apply_crosspost_dedup(posts)
+        posts = _apply_crosspost_dedup(posts, sort=q.sort)
 
     # Diversity cap (only meaningful for 'calculated' sort where ordering is by score)
     if q.sort == "calculated" and diversity_cap > 0:

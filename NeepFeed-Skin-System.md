@@ -2,7 +2,7 @@
 
 > This document extends the base NeepFeed spec. It assumes the core MVP (with CSS custom property foundation) already exists and describes the additions needed for the full skin system: library, live preview, import/export, shareable URLs, and AI-generated skins.
 
-**Status:** Phase 2/3 feature — build after the core NeepFeed MVP is working. The CSS variable foundation must be in the MVP.
+**Status:** Implemented with deliberate deviations — see *"Implementation deviations"* at the bottom. The code is the source of truth; this spec describes the original design intent.
 
 ---
 
@@ -949,3 +949,23 @@ These are explicitly out of scope but documented for future planning:
 - **Per-list skins** — Apply different skins to different lists (e.g., dark theme for Tech, paper theme for Casual).
 - **Animated transitions** — Smooth CSS transitions when switching between skins.
 - **Skin versioning** — If the variable set changes between app versions, handle migration of old skins.
+
+---
+
+## 15. Implementation deviations from this spec
+
+1. **Three built-in skins instead of five.** Only Dark, Light, and Paper are shipped as built-ins. Cyberpunk and Solarized were dropped from the built-in set to reduce maintenance (every new variable must otherwise be back-filled across all built-ins or fall through to defaults). They remain describable as custom skins imported via the JSON format.
+
+2. **Dark skin uses the app's brand palette,** not the slate-blue hex values in Section 4 of this doc. Code values: `--nf-bg-primary: #0b0d10`, `--nf-accent: #ff6b3d`. Section 4 is preserved as historical design intent but the code is authoritative. See `frontend/src/skins/builtin.js` for the actual values.
+
+3. **Shareable URLs were removed.** Section 6's pako-compressed base64 URL flow was dropped — it would add a ~40 KB runtime dependency for a feature a single-user self-hosted app rarely needs. JSON file download per skin (`{name}.neepfeed-skin.json`) handles sharing.
+
+4. **Contrast validation runs entirely client-side.** The backend's skin save/update endpoints do not run WCAG checks; that's a frontend concern. The `POST /api/skins` validator enforces the `--nf-*` prefix, rejects `; { } @` in values (CSS injection guard), caps skin JSON at 16 KB, and caps custom-skin count at 50.
+
+5. **`GET /api/skins/template` was not implemented as a backend endpoint.** The AI prompt template lives at `/skin-template.md` in `frontend/public/` and is served as a static file by Flask.
+
+6. **Built-in skins apply immediately on click; only imported skins enter preview.** Built-ins are trusted and authored alongside the code, so a preview round-trip is unnecessary friction. Imported skins go through preview mode with the contrast warning so the user has a chance to catch a broken JSON paste before Apply persists it.
+
+7. **Skin import validation** checks `version === 1`, rejects arrays-as-variables, and disallows CSS injection characters in variable values both client-side and server-side. (The spec's Section 9 lists these rules; the implementation enforces them.)
+
+8. **Legacy `theme` setting was removed** in favor of the skin system. Previously `user_config.theme = 'dark' | 'light'` coexisted with the skin system; it's been deleted since selecting the Dark or Light built-in skin is the single source of truth.

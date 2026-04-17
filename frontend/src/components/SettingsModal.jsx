@@ -44,11 +44,13 @@ function Slider({ value, onChange, min, max, step = 0.1, format = (v) => v.toFix
 }
 
 function FreshnessSlider({ value, onChange }) {
-  // Labels at 0.5, 1.0, 1.3, 2.0 — we invert-ish so slider reads left->right = more variety->latest only
+  // 0.5 → 2.0 range: below 0.5 the decay is essentially flat (all posts
+  // score nearly the same regardless of age) which is a curiosity, not a
+  // useful setting. 0.7 is marked as "Balanced" since that's the default.
   return (
     <div className="w-64">
       <input
-        type="range" min="0.3" max="2.0" step="0.1"
+        type="range" min="0.5" max="2.0" step="0.1"
         value={value}
         onChange={(e) => onChange(parseFloat(e.target.value))}
         className="w-full accent-brand"
@@ -110,7 +112,7 @@ export default function SettingsModal({ open, onClose, settings, onUpdate, skin 
     const defaults = {
       decay_rate: 0.7, time_window_hours: 96, min_score_threshold: 10,
       new_sub_weight: 1.5, hide_nsfw: false, sort_mode: 'calculated',
-      theme: 'dark', autoplay_videos: true, default_video_muted: true,
+      autoplay_videos: true, default_video_muted: true,
       diversity_cap: 0.3, dedup_crossposts: true, prefetch_enabled: true,
       hide_seen: false, dim_seen: true, compact_mode: false,
       collection_mode: 'batched_hot',
@@ -222,15 +224,8 @@ export default function SettingsModal({ open, onClose, settings, onUpdate, skin 
               <Row label="Compact Mode" hint="Smaller cards, more posts per screen.">
                 <Toggle checked={!!s.compact_mode} onChange={onField('compact_mode')} />
               </Row>
-              <Row label="Theme" hint="Dark recommended for media-forward viewing.">
-                <select
-                  value={s.theme || 'dark'}
-                  onChange={(e) => onField('theme')(e.target.value)}
-                  className="bg-bg border border-white/10 rounded-lg px-2 py-1 text-sm"
-                >
-                  <option value="dark">Dark</option>
-                  <option value="light">Light</option>
-                </select>
+              <Row label="Theme" hint="Managed by the Skins tab — Dark / Light / Paper or a custom skin.">
+                <span className="text-xs text-fg-muted">See Skins →</span>
               </Row>
             </div>
           )}

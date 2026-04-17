@@ -7,6 +7,10 @@
 **Deploy target:** gweep server `192.168.50.19:5002` via Docker/Dockge
 **Status:** Reddit API approval pending — build with mock data first, swap in PRAW when approved
 
+> **Note:** This spec was the original design document. The implementation
+> has since diverged in a few deliberate ways documented below. See
+> *"Implementation deviations"* at the bottom for a full list.
+
 ---
 
 ## 1. Architecture
@@ -30,9 +34,9 @@ Single Docker container: Flask serves the built React SPA as static files + JSON
 ```
 
 **Tech stack:**
-- Backend: Flask, SQLite (WAL mode), PRAW (with mock fallback), APScheduler
-- Frontend: React 18, Tailwind CSS, Vite
-- Deployment: Docker + Docker Compose
+- Backend: Flask 3, SQLite (WAL mode + FTS5), PRAW (with mock fallback), APScheduler
+- Frontend: React 18, Tailwind CSS (skin-driven via CSS custom properties), Vite
+- Deployment: Docker + Docker Compose (multi-stage: node:22-alpine builder → python:3.12-slim runtime, non-root user)
 
 ---
 
@@ -755,3 +759,47 @@ if submission.is_video and submission.media:
 | SQLite write contention (collection + scoring + snapshots) | Slow writes | Use WAL mode, batch inserts in transactions |
 | PRAW OAuth token expiry | Collection stops | PRAW handles refresh automatically, add retry logic |
 | Large subreddit list management in UI | Clunky UX | Search/filter in subreddit manager, bulk import from text area |
+
+---
+
+## 15. Implementation deviations from this spec
+
+The implementation made several deliberate deviations as it was built. The code is the source of truth; these notes describe what changed and why.
+
+### Scoring & defaults
+
+- **`decay_rate` default is `0.7`**, not `1.0`. User opted for a variety-leaning baseline during implementation; `0.7` keeps older high-score posts visible long enough to be useful on a slow-changing homelab feed. "Balanced" marker in the FreshnessSlider sits at `0.7`.
+- **FreshnessSlider range is `0.5 → 2.0`** (was originally specified `0.5 → 2.0`, briefly relaxed to `0.3 → 2.0`, now back to `0.5` floor; below that the decay is effectively flat).
+
+### Schema
+
+- **`posts.calculated_score`** replaces the spec's `current_score` name — less ambiguous against `posts.score` which holds raw upvotes.
+- **Extra `posts` columns** added during implementation: `post_hint`, `gallery_urls` (JSON array), `url_hash` (for cross-post dedup), `blurhash`.
+- **New tables** that weren't in this spec: `post_state` (seen/bookmark/hide per post), `blocklist` (keyword/author/domain/subreddit), `lists` + `list_recommendations` (added via v2 migration — see `NeepFeed-Lists-and-Recommender.md`), `posts_fts` (SQLite FTS5 virtual table backing `/api/search`).
+- **`subscribed_subreddits`** was rebuilt in the v2 migration with a composite `(list_id, name)` unique constraint so the same sub can live in multiple lists with different weights.
+
+### Config keys added to `user_config`
+
+Beyond the spec's defaults: `diversity_cap`, `dedup_crossposts`, `prefetch_enabled`, `hide_seen`, `dim_seen`, `compact_mode`, `collection_mode`, `active_skin`, `custom_skins`, `recommendations_*`.
+
+The legacy `theme` key was removed — theme switching is now handled by the skin system (see `NeepFeed-Skin-System.md`).
+
+### API endpoints added
+
+On top of the spec: `/api/search` (FTS5), `/api/bookmarks`, `/api/posts/<id>/seen`, `/api/posts/seen-batch`, `/api/posts/<id>/bookmark`, `/api/posts/<id>/hidden` (POST/DELETE), `/api/blocklist`, `/api/lists/**` (full CRUD + recommendations placeholders), `/api/skins/**` (full CRUD + active switch).
+
+### Frontend
+
+- **Scoring re-ranking is applied at query time** in Python after the SQL fetch, rather than in a separate worker: diversity cap and cross-post dedup both run server-side. Dedup winner-selection is sort-aware (for `recency` sort, the newest in a cross-post group wins; for `score`, the highest upvote count; for `calculated`, the highest calculated score).
+- **`useFeed` infinite scroll** uses a monotonic request-generation guard in addition to `AbortController` so stale responses cannot overwrite newer state.
+- **Service worker** is network-first with stale fallback for all `/api/*` GETs (not stale-while-revalidate, which caused mutations to appear to fail until a background revalidate landed), cache-first + LRU-trimmed for images, cache-first for shell.
+
+### Docker
+
+- Multi-stage build (node:22-alpine frontend → python:3.12-slim runtime) rather than a single stage with apt-installed Node.
+- Runs as non-root `neepfeed` user (uid/gid 1000).
+- `.dockerignore` excludes build context from `node_modules`, `.venv`, `data/`, `.git`, `*.db`, and review docs.
+
+### Skins
+
+See `NeepFeed-Skin-System.md` for the full spec and deviations. Highlights: 3 built-in skins (Dark / Light / Paper) instead of 5, no URL-share (JSON file export/import instead), contrast validation runs client-side only.

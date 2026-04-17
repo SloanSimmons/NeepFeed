@@ -27,7 +27,6 @@ _SETTING_SPECS: dict[str, dict] = {
     "new_sub_weight":      {"type": "float",  "min": 1.0,  "max": 5.0,  "default": "1.5"},
     "hide_nsfw":           {"type": "bool",   "default": "false"},
     "sort_mode":           {"type": "enum",   "enum": ["calculated","score","recency","velocity"], "default": "calculated"},
-    "theme":               {"type": "enum",   "enum": ["dark","light"], "default": "dark"},
     "autoplay_videos":     {"type": "bool",   "default": "true"},
     "default_video_muted": {"type": "bool",   "default": "true"},
     "diversity_cap":       {"type": "float",  "min": 0.0,  "max": 1.0,  "default": "0.3"},
@@ -185,15 +184,40 @@ def import_config():
     if not isinstance(payload, dict):
         return jsonify({"error": "payload must be an object"}), 400
 
+    # ---- Pre-validate settings before touching the DB ----
+    # Known keys go through _serialize() (same path as POST /api/settings),
+    # so a bad value rejects the whole import instead of corrupting state.
+    raw_settings = payload.get("settings") or {}
+    if not isinstance(raw_settings, dict):
+        return jsonify({"error": "settings must be an object"}), 400
+
+    validated_settings: dict[str, str] = {}
+    setting_errors: dict[str, str] = {}
+    for key, value in raw_settings.items():
+        if key in _SETTING_SPECS:
+            try:
+                validated_settings[key] = _serialize(key, value)
+            except (ValueError, TypeError) as e:
+                setting_errors[key] = str(e)
+        else:
+            # Unknown keys pass through as strings (forward-compat for new keys)
+            validated_settings[key] = str(value)
+
+    if setting_errors:
+        return jsonify({
+            "error": "invalid settings in import",
+            "setting_errors": setting_errors,
+        }), 400
+
     db = get_db()
     now = int(time.time())
 
-    # Settings
-    for key, value in (payload.get("settings") or {}).items():
+    # Settings (all pre-validated)
+    for key, value in validated_settings.items():
         db.execute(
             "INSERT INTO user_config(key,value) VALUES(?,?) "
             "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-            (key, str(value)),
+            (key, value),
         )
 
     # Lists (v2 format): upsert lists, then their subreddits

@@ -21,11 +21,11 @@ async function req(path, { method = 'GET', body, signal } = {}) {
 
 export const api = {
   // Feed
-  feed: (params = {}) => {
+  feed: (params = {}, opts = {}) => {
     const q = new URLSearchParams(params).toString();
-    return req(`/api/feed${q ? `?${q}` : ''}`);
+    return req(`/api/feed${q ? `?${q}` : ''}`, opts);
   },
-  search: (q, params = {}) => req(`/api/search?${new URLSearchParams({ q, ...params })}`),
+  search: (q, params = {}, opts = {}) => req(`/api/search?${new URLSearchParams({ q, ...params })}`, opts),
 
   // Subreddits
   subreddits: () => req('/api/subreddits'),
@@ -34,12 +34,22 @@ export const api = {
   toggleSub: (name) => req('/api/subreddits', { method: 'POST', body: { action: 'toggle', name } }),
   setSubWeight: (name, weight) => req(`/api/subreddits/${encodeURIComponent(name)}/weight`, { method: 'PATCH', body: { weight } }),
   updateSub: (name, patch) => req(`/api/subreddits/${encodeURIComponent(name)}`, { method: 'PATCH', body: patch }),
-  importSubs: (body, contentType = 'application/json') =>
-    fetch('/api/subreddits/import', {
+  importSubs: async (body, contentType = 'application/json') => {
+    const res = await fetch('/api/subreddits/import', {
       method: 'POST',
-      headers: { 'Content-Type': contentType },
+      headers: { 'Content-Type': contentType, Accept: 'application/json' },
       body: typeof body === 'string' ? body : JSON.stringify(body),
-    }).then((r) => r.json()),
+    });
+    const ct = res.headers.get('content-type') || '';
+    const data = ct.includes('application/json') ? await res.json() : { raw: await res.text() };
+    if (!res.ok) {
+      const err = new Error(`${res.status} ${res.statusText}: ${JSON.stringify(data)}`);
+      err.status = res.status;
+      err.payload = data;
+      throw err;
+    }
+    return data;
+  },
 
   // Settings
   settings: () => req('/api/settings'),
@@ -55,7 +65,7 @@ export const api = {
   hidePost: (redditId) => req(`/api/posts/${redditId}/hidden`, { method: 'POST' }),
   unhidePost: (redditId) => req(`/api/posts/${redditId}/hidden`, { method: 'DELETE' }),
   refreshVideo: (redditId) => req(`/api/posts/${redditId}/refresh-video`),
-  bookmarks: (params = {}) => req(`/api/bookmarks?${new URLSearchParams(params)}`),
+  bookmarks: (params = {}, opts = {}) => req(`/api/bookmarks?${new URLSearchParams(params)}`, opts),
 
   // Blocklist
   blocklist: () => req('/api/blocklist'),

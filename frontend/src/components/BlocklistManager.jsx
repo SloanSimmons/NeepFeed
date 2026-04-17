@@ -12,12 +12,16 @@ export default function BlocklistManager() {
   const [items, setItems] = useState({});
   const [type, setType] = useState('keyword');
   const [value, setValue] = useState('');
+  const [error, setError] = useState(null);
 
   const refresh = async () => {
     try {
       const r = await api.blocklist();
       setItems(r.blocklist || {});
-    } catch {}
+      setError(null);
+    } catch (err) {
+      setError('Failed to load blocklist: ' + err.message);
+    }
   };
   useEffect(() => { refresh(); }, []);
 
@@ -25,20 +29,29 @@ export default function BlocklistManager() {
     e.preventDefault();
     const v = value.trim();
     if (!v) return;
-    await api.addBlock(type, v);
-    setValue('');
-    refresh();
+    try {
+      await api.addBlock(type, v);
+      setValue('');
+      await refresh();
+    } catch (err) {
+      setError('Failed to add: ' + err.message);
+    }
   };
 
   const onRemove = async (t, v) => {
-    await api.removeBlock(t, v);
-    refresh();
+    try {
+      await api.removeBlock(t, v);
+      await refresh();
+    } catch (err) {
+      setError('Failed to remove: ' + err.message);
+    }
   };
 
   const allItems = Object.entries(items).flatMap(([t, arr]) => arr.map((i) => ({ ...i, type: t })));
 
   return (
     <div>
+      {error && <div className="text-red-400 text-xs mb-2 font-mono">{error}</div>}
       <form onSubmit={onAdd} className="flex gap-2 mb-3">
         <select
           value={type}

@@ -284,8 +284,9 @@ POST   /api/collect/trigger             manual collection run
 
 ## Status
 
-- Core MVP + lists infrastructure + skin system: **shipped**.
+- Core MVP + lists infrastructure + skin system + M6 polish: **shipped**.
 - Reddit API: **approval pending** — runs against the mock client until creds are set. Docs here use mock examples where relevant.
+- Reviewed + hardened against two external code reviews (April 2026): all verified P1/P2 findings resolved — config import validation, network-first SW for mutable APIs, seen-batch FK safety, FTS input sanitization, feed abort signals + request-generation guard, sort-aware crosspost dedup, PostCard bookmark sync, dev-seed route removed.
 - Deferred (intentionally, until daily-drive feedback):
   - Recommendation engine (L3) — needs real Reddit API
   - Full list-selector UI (L4) — data model exists, UI waits for usage feedback

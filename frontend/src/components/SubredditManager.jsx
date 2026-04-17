@@ -41,7 +41,7 @@ export default function SubredditManager() {
       await api.addSub(name);
       setAdding('');
       await refresh();
-    } catch (e) { setError(e.message); }
+    } catch (err) { setError(err.message); }
   };
 
   const onRemove = async (name) => {
@@ -49,14 +49,14 @@ export default function SubredditManager() {
     try {
       await api.removeSub(name);
       await refresh();
-    } catch (e) { setError(e.message); }
+    } catch (err) { setError(err.message); }
   };
 
   const onToggle = async (name) => {
     try {
       await api.toggleSub(name);
       await refresh();
-    } catch (e) { setError(e.message); }
+    } catch (err) { setError(err.message); }
   };
 
   const onSetWeight = async (name, weight) => {

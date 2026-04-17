@@ -118,7 +118,6 @@ INSERT OR IGNORE INTO user_config(key,value) VALUES
   ('new_sub_weight',         '1.5'),
   ('hide_nsfw',              'false'),
   ('sort_mode',              'calculated'),
-  ('theme',                  'dark'),
   ('autoplay_videos',        'true'),
   ('default_video_muted',    'true'),
   ('diversity_cap',          '0.3'),     -- max fraction of feed from any single sub (0 to disable)

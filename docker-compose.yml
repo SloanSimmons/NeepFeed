@@ -5,7 +5,7 @@ services:
       dockerfile: docker/Dockerfile
     container_name: neepfeed
     ports:
-      # Host port TBD — pick an unused one on gweep before deploy. Spec said 5002.
+      # Host:container. Change the left side if 5002 is taken on the host.
       - "5002:5000"
     volumes:
       - ./data:/app/data

@@ -1,0 +1,47 @@
+# Python
+**/__pycache__
+**/*.py[cod]
+**/*$py.class
+**/*.egg-info
+**/.venv
+**/venv
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+
+# Node
+**/node_modules
+**/npm-debug.log*
+**/.vite
+
+# Data (created fresh on first boot)
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Git / IDE / OS
+.git
+.gitignore
+.vscode
+.idea
+*.swp
+.DS_Store
+Thumbs.db
+
+# Docs / misc (kept out of image to reduce build context)
+HANDOFF-*.md
+NeepFeed-Code-Review.md
+NeepFeed-Codex-Code-Review.md
+
+# Frontend build products (rebuilt inside the image)
+frontend/dist
+
+# Claude scratch
+.claude

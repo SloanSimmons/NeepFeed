@@ -45,22 +45,45 @@ def mark_seen(reddit_id: str):
 
 @bp.post("/posts/seen-batch")
 def mark_seen_batch():
+    """Mark a batch of posts as seen.
+
+    Ids that reference posts no longer in the DB (pruned by the collection
+    cleanup, or never existed) are silently skipped so the endpoint never
+    fails the whole batch on a single stale id. Returns `marked` (posts
+    that got updated) and `skipped` (ids that didn't match any post).
+    """
     body = request.get_json(silent=True) or {}
-    ids = [str(x) for x in (body.get("reddit_ids") or [])]
+    ids = [str(x).strip() for x in (body.get("reddit_ids") or []) if str(x).strip()]
     if not ids:
-        return jsonify({"success": True, "marked": 0})
+        return jsonify({"success": True, "marked": 0, "skipped": 0})
+
     db = get_db()
     now = int(time.time())
+
+    # Prefilter against posts table to avoid FK-violation errors on stale ids.
+    placeholders = ",".join(["?"] * len(ids))
+    existing = {
+        r["reddit_id"]
+        for r in db.execute(
+            f"SELECT reddit_id FROM posts WHERE reddit_id IN ({placeholders})", ids
+        ).fetchall()
+    }
     marked = 0
     for rid in ids:
-        cur = db.execute(
+        if rid not in existing:
+            continue
+        db.execute(
             "INSERT INTO post_state(reddit_id, seen_at) VALUES(?, ?) "
-            "ON CONFLICT(reddit_id) DO UPDATE SET seen_at=COALESCE(post_state.seen_at, excluded.seen_at) "
-            "WHERE EXISTS (SELECT 1 FROM posts WHERE reddit_id=?)",
-            (rid, now, rid),
+            "ON CONFLICT(reddit_id) DO UPDATE SET seen_at=COALESCE(post_state.seen_at, excluded.seen_at)",
+            (rid, now),
         )
-        marked += cur.rowcount or 0
-    return jsonify({"success": True, "marked": marked})
+        marked += 1
+
+    return jsonify({
+        "success": True,
+        "marked": marked,
+        "skipped": len(ids) - marked,
+    })
 
 
 @bp.post("/posts/<reddit_id>/bookmark")
