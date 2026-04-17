@@ -13,6 +13,7 @@ import { api } from '../api/client.js';
 export function useFeed({
   sort = 'calculated',
   hideNsfw,
+  hideSfw,
   hideSeen,
   subreddit,
   search,
@@ -36,7 +37,7 @@ export function useFeed({
   const genRef = useRef(0);
   const limit = 25;
 
-  const deps = JSON.stringify({ sort, hideNsfw, hideSeen, subreddit, search, source, list });
+  const deps = JSON.stringify({ sort, hideNsfw, hideSfw, hideSeen, subreddit, search, source, list });
 
   const fetchPage = useCallback(async (nextOffset) => {
     setLoading(true);
@@ -52,6 +53,7 @@ export function useFeed({
       } else {
         const params = { sort, limit, offset: nextOffset };
         if (hideNsfw) params.hide_nsfw = 'true';
+        if (hideSfw) params.hide_sfw = 'true';
         if (hideSeen) params.hide_seen = 'true';
         if (subreddit) params.subreddit = subreddit;
         if (search) params.q = search;

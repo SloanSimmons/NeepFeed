@@ -39,6 +39,7 @@ def feed():
         limit=min(100, max(1, int(args.get("limit", 25)))),
         offset=max(0, int(args.get("offset", 0))),
         hide_nsfw=_parse_bool(args.get("hide_nsfw"), hide_nsfw_default),
+        hide_sfw=_parse_bool(args.get("hide_sfw"), False),
         hide_seen=_parse_bool(args.get("hide_seen"), False),
         min_score=int(args.get("min_score", min_score_default)),
         time_window_hours=float(args.get("window", window_default)),

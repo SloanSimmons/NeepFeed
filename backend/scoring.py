@@ -132,7 +132,10 @@ class FeedQuery:
     sort: str = "calculated"      # calculated | score | recency | velocity
     limit: int = 25
     offset: int = 0
-    hide_nsfw: bool = False
+    hide_nsfw: bool = False       # only SFW posts (is_nsfw=0)
+    hide_sfw: bool = False        # only NSFW posts (is_nsfw=1). Mutually
+                                  # exclusive with hide_nsfw at the UI layer;
+                                  # setting both returns an empty feed.
     hide_seen: bool = False
     min_score: int = 0
     time_window_hours: float = 96.0
@@ -307,6 +310,8 @@ def get_feed(conn: sqlite3.Connection, q: FeedQuery) -> dict:
 
     if q.hide_nsfw:
         where.append("p.is_nsfw = 0")
+    if q.hide_sfw:
+        where.append("p.is_nsfw = 1")
     if q.subreddit:
         where.append("p.subreddit = ?")
         params.append(q.subreddit.lower())

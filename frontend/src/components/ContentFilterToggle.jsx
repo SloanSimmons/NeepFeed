@@ -1,8 +1,10 @@
 /**
- * Segmented pill that controls NSFW filtering for the active feed view.
- * Two states: 'sfw' (NSFW posts hidden) and 'all' (everything shown).
+ * Segmented pill that controls the NSFW axis for the active feed view.
+ * Binary and complementary — the two states pick distinct content sets:
+ *   'sfw'  → only SFW posts
+ *   'nsfw' → only NSFW posts
  *
- * The same state drives the "Everything (SFW)" vs "Everything (Uncensored)"
+ * The same state drives the "Everything (SFW)" / "Everything (NSFW)"
  * entries in the Custom Feeds dropdown when the active scope is ALL_LISTS.
  */
 export default function ContentFilterToggle({ value, onChange, compact = false }) {
@@ -26,8 +28,8 @@ export default function ContentFilterToggle({ value, onChange, compact = false }
       role="group"
       aria-label="Content filter"
     >
-      <Pill id="sfw" label="SFW"  title="Hide NSFW posts" />
-      <Pill id="all" label="All" title="Show all posts, including NSFW" />
+      <Pill id="sfw"  label="SFW"  title="SFW posts only" />
+      <Pill id="nsfw" label="NSFW" title="NSFW posts only" />
     </div>
   );
 }

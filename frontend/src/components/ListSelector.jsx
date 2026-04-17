@@ -29,7 +29,7 @@ export default function ListSelector({
   // flip the toggle independently.
   const scopeIsAll = activeId === ALL_LISTS;
   const everythingSfwActive = scopeIsAll && contentFilter === 'sfw';
-  const everythingAllActive = scopeIsAll && contentFilter === 'all';
+  const everythingNsfwActive = scopeIsAll && contentFilter === 'nsfw';
 
   const pickEverything = (filter) => {
     onContentFilterChange?.(filter);
@@ -61,15 +61,15 @@ export default function ListSelector({
             active={everythingSfwActive}
             icon="🛡️"
             name="Everything (SFW)"
-            hint="All lists merged · NSFW hidden"
+            hint="All lists merged · SFW posts only"
             onClick={() => pickEverything('sfw')}
           />
           <Row
-            active={everythingAllActive}
-            icon="🌐"
-            name="Everything (Uncensored)"
-            hint="All lists merged · NSFW included"
-            onClick={() => pickEverything('all')}
+            active={everythingNsfwActive}
+            icon="🔞"
+            name="Everything (NSFW)"
+            hint="All lists merged · NSFW posts only"
+            onClick={() => pickEverything('nsfw')}
           />
           <div className="border-t border-white/5" />
           <Row

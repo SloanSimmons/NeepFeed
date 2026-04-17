@@ -96,15 +96,15 @@ export default function MobileSidebar({
                     active={activeListId === ALL_LISTS && contentFilter === 'sfw'}
                     icon="🛡️"
                     name="Everything (SFW)"
-                    hint="All lists merged · NSFW hidden"
+                    hint="All lists merged · SFW posts only"
                     onClick={() => { onContentFilterChange?.('sfw'); pick(onListChange)(ALL_LISTS); }}
                   />
                   <DrawerRow
-                    active={activeListId === ALL_LISTS && contentFilter === 'all'}
-                    icon="🌐"
-                    name="Everything (Uncensored)"
-                    hint="All lists merged · NSFW included"
-                    onClick={() => { onContentFilterChange?.('all'); pick(onListChange)(ALL_LISTS); }}
+                    active={activeListId === ALL_LISTS && contentFilter === 'nsfw'}
+                    icon="🔞"
+                    name="Everything (NSFW)"
+                    hint="All lists merged · NSFW posts only"
+                    onClick={() => { onContentFilterChange?.('nsfw'); pick(onListChange)(ALL_LISTS); }}
                   />
                   <DrawerRow
                     active={false}

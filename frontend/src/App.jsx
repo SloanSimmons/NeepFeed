@@ -27,13 +27,20 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  // Content filter: 'sfw' hides NSFW, 'all' shows everything. Persisted in
-  // localStorage; seeded from the legacy settings.hide_nsfw default on first
-  // load so existing users keep their preference.
+  // Content filter — binary and complementary:
+  //   'sfw'  → only SFW posts
+  //   'nsfw' → only NSFW posts
+  // Persisted to localStorage; first-load seed comes from settings.hide_nsfw.
+  // Legacy 'all' values (from the older tri-state attempt) migrate to 'nsfw'
+  // since that's what the user actually wanted when they picked "uncensored".
   const [contentFilter, setContentFilterState] = useState(() => {
     try {
       const saved = localStorage.getItem('neepfeed_content_filter');
-      if (saved === 'sfw' || saved === 'all') return saved;
+      if (saved === 'sfw' || saved === 'nsfw') return saved;
+      if (saved === 'all') {
+        localStorage.setItem('neepfeed_content_filter', 'nsfw');
+        return 'nsfw';
+      }
     } catch {}
     return null; // decided after settings load below
   });
@@ -52,7 +59,11 @@ export default function App() {
   useEffect(() => {
     if (contentFilter != null) return;
     if (!settings) return;
-    setContentFilterState(settings.hide_nsfw ? 'sfw' : 'all');
+    // First-load seed: default to 'sfw' unless the legacy hide_nsfw is
+    // explicitly disabled AND there's no persisted choice. Binary model, so
+    // 'nsfw' here would mean NSFW-only, which is a surprising default — SFW
+    // is the safer starting point for a new user.
+    setContentFilterState('sfw');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings]);
 
@@ -81,6 +92,7 @@ export default function App() {
     // contentFilter is the authoritative NSFW source; settings.hide_nsfw
     // only seeds the initial value on first run.
     hideNsfw: contentFilter === 'sfw',
+    hideSfw:  contentFilter === 'nsfw',
     hideSeen: settings?.hide_seen,
     prefetch: settings?.prefetch_enabled !== false,
   });
