@@ -29,8 +29,9 @@ _collection_lock = threading.Lock()
 # ---------------------------------------------------------------------------
 
 def _get_active_subreddits(conn: sqlite3.Connection) -> list[str]:
+    # DISTINCT because a subreddit can live in multiple lists post-v2.
     rows = conn.execute(
-        "SELECT name FROM subscribed_subreddits WHERE active=1 ORDER BY name"
+        "SELECT DISTINCT name FROM subscribed_subreddits WHERE active=1 ORDER BY name"
     ).fetchall()
     return [r["name"] for r in rows]
 
@@ -97,7 +98,12 @@ def _record_snapshot(conn: sqlite3.Connection, p: PostData, now: int) -> None:
 
 
 def _update_new_sub_boosts(conn: sqlite3.Connection, now: int) -> None:
-    """Flip is_new_boost flag on subs added <7 days ago."""
+    """Flip is_new_boost flag on list-memberships added <7 days ago.
+
+    Post-v2 each row is a (list_id, name) membership; a sub can have the boost
+    active in one list and not another. Scoring reads ANY boost across lists,
+    so this per-row treatment is correct.
+    """
     seven_days = 7 * 24 * 3600
     conn.execute(
         "UPDATE subscribed_subreddits SET is_new_boost = CASE "

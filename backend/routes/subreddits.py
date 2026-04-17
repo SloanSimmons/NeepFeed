@@ -1,10 +1,15 @@
 """Subreddit CRUD + bulk import.
 
-GET    /api/subreddits              -> list
-POST   /api/subreddits               -> action: add | remove | toggle
-PATCH  /api/subreddits/<name>/weight -> set per-sub weight
-POST   /api/subreddits/import        -> bulk-import from various formats
-PATCH  /api/subreddits/<name>        -> update misc fields (sort_override, active)
+Post v2 the underlying table is (list_id, name); these "global" endpoints
+operate against the default list ("My Feed", id=1) to preserve backward
+compatibility for the existing flat-list frontend. Per-list endpoints live
+in routes/lists.py.
+
+GET    /api/subreddits               -> list of unique subs with list_ids[]
+POST   /api/subreddits                -> action: add | remove | toggle (default list)
+PATCH  /api/subreddits/<name>/weight -> set weight in default list
+POST   /api/subreddits/import         -> bulk-import into the default list
+PATCH  /api/subreddits/<name>         -> update misc fields in default list
 """
 from __future__ import annotations
 
@@ -18,6 +23,7 @@ from db import get_db
 
 bp = Blueprint("subreddits", __name__)
 
+DEFAULT_LIST_ID = 1  # "My Feed"
 
 _VALID_SUB_RE = re.compile(r"^[a-z0-9][a-z0-9_]{1,20}$")
 
@@ -26,7 +32,6 @@ def _normalize_name(raw: str) -> str | None:
     if not raw:
         return None
     s = raw.strip().lower()
-    # Accept "r/foo", "/r/foo", "R/foo", "https://reddit.com/r/foo/..."
     m = re.match(r"^(?:https?://(?:www\.|old\.)?reddit\.com)?/?r/([a-z0-9_]+)/?$", s) or re.match(r"^([a-z0-9_]+)$", s)
     if not m:
         return None
@@ -34,34 +39,61 @@ def _normalize_name(raw: str) -> str | None:
     return name if _VALID_SUB_RE.match(name) else None
 
 
-def _sub_row_to_dict(row, post_count: int | None = None) -> dict:
-    d = {
-        "name": row["name"],
-        "added_at": row["added_at"],
-        "active": bool(row["active"]),
-        "weight": float(row["weight"] or 1.0),
-        "is_new_boost": bool(row["is_new_boost"]),
-        "sort_override": row["sort_override"],
-    }
-    if post_count is not None:
-        d["post_count"] = post_count
-    return d
-
-
 @bp.get("/subreddits")
 def list_subs():
+    """Return one entry per unique subreddit, enriched with list membership info."""
     db = get_db()
     rows = db.execute(
-        "SELECT s.*, (SELECT COUNT(*) FROM posts p WHERE p.subreddit=s.name) AS post_count "
-        "FROM subscribed_subreddits s ORDER BY s.name"
+        """
+        SELECT
+            s.name AS name,
+            MIN(s.added_at) AS added_at,
+            MAX(s.active) AS active,
+            MAX(s.weight) AS weight,
+            MAX(s.is_new_boost) AS is_new_boost,
+            GROUP_CONCAT(s.list_id || ':' || s.weight, '|') AS memberships,
+            (SELECT COUNT(*) FROM posts p WHERE p.subreddit = s.name) AS post_count
+        FROM subscribed_subreddits s
+        GROUP BY s.name
+        ORDER BY s.name
+        """
     ).fetchall()
-    items = [_sub_row_to_dict(r, r["post_count"]) for r in rows]
+
+    items = []
+    for r in rows:
+        memberships = r["memberships"] or ""
+        list_ids: list[int] = []
+        weight_by_list: dict[str, float] = {}
+        for pair in memberships.split("|"):
+            if ":" in pair:
+                lid, w = pair.split(":", 1)
+                try:
+                    list_ids.append(int(lid))
+                    weight_by_list[lid] = float(w)
+                except ValueError:
+                    continue
+        items.append({
+            "name": r["name"],
+            "added_at": r["added_at"],
+            "active": bool(r["active"]),
+            "weight": float(r["weight"] or 1.0),
+            "is_new_boost": bool(r["is_new_boost"]),
+            "list_ids": sorted(set(list_ids)),
+            "weight_by_list": weight_by_list,
+            "post_count": r["post_count"] or 0,
+            "sort_override": None,  # per-list; not meaningful here
+        })
+
     active = sum(1 for i in items if i["active"])
     return jsonify({"subreddits": items, "total": len(items), "active_count": active})
 
 
 @bp.post("/subreddits")
 def mutate_sub():
+    """Add/remove/toggle against the default list only (backward-compat).
+
+    To manage per-list membership, use /api/lists/<id>/subreddits.
+    """
     body = request.get_json(silent=True) or {}
     action = (body.get("action") or "").lower()
     name = _normalize_name(body.get("name", ""))
@@ -75,19 +107,28 @@ def mutate_sub():
 
     if action == "add":
         db.execute(
-            "INSERT INTO subscribed_subreddits(name, added_at, active, weight) "
-            "VALUES(?,?,1,1.0) "
-            "ON CONFLICT(name) DO UPDATE SET active=1",
-            (name, now),
+            "INSERT INTO subscribed_subreddits(list_id, name, added_at, active, weight) "
+            "VALUES(?, ?, ?, 1, 1.0) "
+            "ON CONFLICT(list_id, name) DO UPDATE SET active=1",
+            (DEFAULT_LIST_ID, name, now),
         )
     elif action == "remove":
-        db.execute("DELETE FROM subscribed_subreddits WHERE name=?", (name,))
-        return jsonify({"success": True, "removed": name})
+        db.execute(
+            "DELETE FROM subscribed_subreddits WHERE list_id=? AND name=?",
+            (DEFAULT_LIST_ID, name),
+        )
+        return jsonify({"success": True, "removed": name, "list_id": DEFAULT_LIST_ID})
     elif action == "toggle":
-        db.execute("UPDATE subscribed_subreddits SET active = 1 - active WHERE name=?", (name,))
+        db.execute(
+            "UPDATE subscribed_subreddits SET active = 1 - active WHERE list_id=? AND name=?",
+            (DEFAULT_LIST_ID, name),
+        )
 
-    row = db.execute("SELECT * FROM subscribed_subreddits WHERE name=?", (name,)).fetchone()
-    return jsonify({"success": True, "subreddit": _sub_row_to_dict(row) if row else None})
+    row = db.execute(
+        "SELECT * FROM subscribed_subreddits WHERE list_id=? AND name=?",
+        (DEFAULT_LIST_ID, name),
+    ).fetchone()
+    return jsonify({"success": True, "subreddit": _row_to_dict(row) if row else None})
 
 
 @bp.patch("/subreddits/<name>/weight")
@@ -102,11 +143,17 @@ def set_weight(name: str):
         return jsonify({"error": "weight must be a number"}), 400
     weight = max(0.1, min(5.0, weight))
     db = get_db()
-    cur = db.execute("UPDATE subscribed_subreddits SET weight=? WHERE name=?", (weight, name_n))
+    cur = db.execute(
+        "UPDATE subscribed_subreddits SET weight=? WHERE list_id=? AND name=?",
+        (weight, DEFAULT_LIST_ID, name_n),
+    )
     if cur.rowcount == 0:
-        return jsonify({"error": "not found"}), 404
-    row = db.execute("SELECT * FROM subscribed_subreddits WHERE name=?", (name_n,)).fetchone()
-    return jsonify({"success": True, "subreddit": _sub_row_to_dict(row)})
+        return jsonify({"error": "not found in default list"}), 404
+    row = db.execute(
+        "SELECT * FROM subscribed_subreddits WHERE list_id=? AND name=?",
+        (DEFAULT_LIST_ID, name_n),
+    ).fetchone()
+    return jsonify({"success": True, "subreddit": _row_to_dict(row)})
 
 
 @bp.patch("/subreddits/<name>")
@@ -135,29 +182,44 @@ def update_sub(name: str):
 
     db = get_db()
     setters = ", ".join(f"{col}=?" for col, _ in updates)
-    params = [v for _, v in updates] + [name_n]
-    cur = db.execute(f"UPDATE subscribed_subreddits SET {setters} WHERE name=?", params)
+    params = [v for _, v in updates] + [DEFAULT_LIST_ID, name_n]
+    cur = db.execute(
+        f"UPDATE subscribed_subreddits SET {setters} WHERE list_id=? AND name=?",
+        params,
+    )
     if cur.rowcount == 0:
-        return jsonify({"error": "not found"}), 404
-    row = db.execute("SELECT * FROM subscribed_subreddits WHERE name=?", (name_n,)).fetchone()
-    return jsonify({"success": True, "subreddit": _sub_row_to_dict(row)})
+        return jsonify({"error": "not found in default list"}), 404
+    row = db.execute(
+        "SELECT * FROM subscribed_subreddits WHERE list_id=? AND name=?",
+        (DEFAULT_LIST_ID, name_n),
+    ).fetchone()
+    return jsonify({"success": True, "subreddit": _row_to_dict(row)})
 
 
 # ---------------------------------------------------------------------------
-# Bulk import
+# Helpers
 # ---------------------------------------------------------------------------
 
-def _parse_import_payload(raw: str | bytes | dict) -> list[str]:
-    """Accepts any of:
-        - Plain text: one sub per line, comma-separated, or space-separated
-        - Multi-reddit URL path: 'a+b+c'
-        - Reddit subscription CSV export (comma-separated with headers in first row)
-        - Apollo backup JSON  (array of objects with 'subredditName' or 'name')
-        - Sync for Reddit JSON (array of objects with 'name' or 'display_name')
-        - Reddit API 'subreddits/mine' JSON (hash with 'data.children[].data.display_name')
+def _row_to_dict(row, post_count: int | None = None) -> dict:
+    d = {
+        "list_id": row["list_id"],
+        "name": row["name"],
+        "added_at": row["added_at"],
+        "active": bool(row["active"]),
+        "weight": float(row["weight"] or 1.0),
+        "is_new_boost": bool(row["is_new_boost"]),
+        "sort_override": row["sort_override"],
+    }
+    if post_count is not None:
+        d["post_count"] = post_count
+    return d
 
-    Returns a deduplicated, normalized list of sub names.
-    """
+
+# ---------------------------------------------------------------------------
+# Bulk import (defaults to the "My Feed" list)
+# ---------------------------------------------------------------------------
+
+def _parse_import_payload(raw) -> list[str]:
     names: list[str] = []
 
     def _add_many(strs):
@@ -166,7 +228,6 @@ def _parse_import_payload(raw: str | bytes | dict) -> list[str]:
             if n:
                 names.append(n)
 
-    # Bytes -> str
     if isinstance(raw, (bytes, bytearray)):
         try:
             raw = raw.decode("utf-8", errors="ignore")
@@ -175,17 +236,14 @@ def _parse_import_payload(raw: str | bytes | dict) -> list[str]:
 
     if isinstance(raw, str):
         text = raw.strip()
-        # Try JSON first
         try:
             parsed = json.loads(text)
             return _parse_import_payload(parsed)
         except (json.JSONDecodeError, ValueError):
             pass
-        # CSV / plain text: split on commas, plusses, whitespace, newlines
         tokens = re.split(r"[\s,;+]+", text)
         _add_many(tokens)
     elif isinstance(raw, list):
-        # List of strings or objects
         for item in raw:
             if isinstance(item, str):
                 _add_many([item])
@@ -196,7 +254,6 @@ def _parse_import_payload(raw: str | bytes | dict) -> list[str]:
                         _add_many([v])
                         break
     elif isinstance(raw, dict):
-        # Reddit API: {'data': {'children': [{'data': {'display_name': 'foo'}}, ...]}}
         children = (raw.get("data") or {}).get("children")
         if isinstance(children, list):
             for c in children:
@@ -205,7 +262,6 @@ def _parse_import_payload(raw: str | bytes | dict) -> list[str]:
                     _add_many([name])
                 except (KeyError, TypeError):
                     continue
-        # Also walk any top-level arrays by common keys
         for k in ("subreddits", "subs", "items"):
             v = raw.get(k)
             if isinstance(v, list):
@@ -214,7 +270,6 @@ def _parse_import_payload(raw: str | bytes | dict) -> list[str]:
                     for x in v
                 )
 
-    # Deduplicate, preserve order
     seen: set[str] = set()
     out: list[str] = []
     for n in names:
@@ -226,10 +281,7 @@ def _parse_import_payload(raw: str | bytes | dict) -> list[str]:
 
 @bp.post("/subreddits/import")
 def import_subs():
-    """Accept a raw-text or JSON body, or a multipart file upload with field name 'file'."""
-    names: list[str] = []
-
-    # File upload?
+    """Import into the default list. Use /api/lists/<id>/subreddits/bulk for a specific list."""
     if "file" in request.files:
         f = request.files["file"]
         names = _parse_import_payload(f.read())
@@ -248,9 +300,9 @@ def import_subs():
     added, existing = [], []
     for n in names:
         cur = db.execute(
-            "INSERT INTO subscribed_subreddits(name, added_at, active, weight) "
-            "VALUES(?,?,1,1.0) ON CONFLICT(name) DO NOTHING",
-            (n, now),
+            "INSERT INTO subscribed_subreddits(list_id, name, added_at, active, weight) "
+            "VALUES(?, ?, ?, 1, 1.0) ON CONFLICT(list_id, name) DO NOTHING",
+            (DEFAULT_LIST_ID, n, now),
         )
         if cur.rowcount > 0:
             added.append(n)
@@ -259,6 +311,7 @@ def import_subs():
 
     return jsonify({
         "success": True,
+        "list_id": DEFAULT_LIST_ID,
         "added": added,
         "already_subscribed": existing,
         "added_count": len(added),

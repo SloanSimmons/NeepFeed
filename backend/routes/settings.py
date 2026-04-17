@@ -128,13 +128,37 @@ def export_config():
         for r in db.execute("SELECT key, value FROM user_config").fetchall()
         if not r["key"].startswith("_")
     }
-    subs = [dict(r) for r in db.execute("SELECT name, active, weight, sort_override, added_at FROM subscribed_subreddits ORDER BY name").fetchall()]
+    # Lists + memberships (v2 format)
+    list_rows = db.execute("SELECT id, name, icon, position, created_at, settings_overrides FROM lists ORDER BY position, id").fetchall()
+    lists_out = []
+    for lr in list_rows:
+        subs_in_list = db.execute(
+            "SELECT name, active, weight, sort_override, added_at FROM subscribed_subreddits WHERE list_id=? ORDER BY name",
+            (lr["id"],),
+        ).fetchall()
+        lists_out.append({
+            "id": lr["id"],
+            "name": lr["name"],
+            "icon": lr["icon"],
+            "position": lr["position"],
+            "created_at": lr["created_at"],
+            "settings_overrides": lr["settings_overrides"],
+            "subreddits": [dict(s) for s in subs_in_list],
+        })
+    # Legacy flat `subreddits` array for backward compat — unique names with max weight
+    legacy_subs = [
+        dict(r) for r in db.execute(
+            "SELECT name, MAX(active) AS active, MAX(weight) AS weight, MAX(is_new_boost) AS is_new_boost, "
+            "MIN(added_at) AS added_at FROM subscribed_subreddits GROUP BY name ORDER BY name"
+        ).fetchall()
+    ]
     blocklist = [dict(r) for r in db.execute("SELECT type, value FROM blocklist ORDER BY type, value").fetchall()]
     payload = {
         "exported_at": dt.datetime.now(dt.timezone.utc).isoformat(),
-        "neepfeed_export_version": 1,
+        "neepfeed_export_version": 2,
         "settings": settings,
-        "subreddits": subs,
+        "lists": lists_out,
+        "subreddits": legacy_subs,  # preserved for v1-era import tools
         "blocklist": blocklist,
     }
     body = json.dumps(payload, indent=2)
@@ -172,24 +196,71 @@ def import_config():
             (key, str(value)),
         )
 
-    # Subreddits (upsert)
-    for sub in (payload.get("subreddits") or []):
-        name = (sub.get("name") or "").strip().lower()
-        if not name:
-            continue
-        db.execute(
-            "INSERT INTO subscribed_subreddits(name, added_at, active, weight, sort_override) "
-            "VALUES(?,?,?,?,?) "
-            "ON CONFLICT(name) DO UPDATE SET "
-            "  active=excluded.active, weight=excluded.weight, sort_override=excluded.sort_override",
-            (
-                name,
-                int(sub.get("added_at") or now),
-                1 if sub.get("active", True) else 0,
-                float(sub.get("weight", 1.0) or 1.0),
-                sub.get("sort_override"),
-            ),
-        )
+    # Lists (v2 format): upsert lists, then their subreddits
+    exported_version = int(payload.get("neepfeed_export_version") or 1)
+
+    if exported_version >= 2 and payload.get("lists"):
+        for lst in payload["lists"]:
+            name = (lst.get("name") or "").strip()
+            if not name:
+                continue
+            icon = lst.get("icon") or "📋"
+            position = int(lst.get("position") or 0)
+            overrides = lst.get("settings_overrides") or "{}"
+            if isinstance(overrides, dict):
+                overrides = json.dumps(overrides)
+            # Upsert by name (stable identifier across exports)
+            existing = db.execute("SELECT id FROM lists WHERE name=?", (name,)).fetchone()
+            if existing:
+                list_id = existing["id"]
+                db.execute(
+                    "UPDATE lists SET icon=?, position=?, settings_overrides=? WHERE id=?",
+                    (icon, position, overrides, list_id),
+                )
+            else:
+                cur = db.execute(
+                    "INSERT INTO lists(name, icon, position, created_at, settings_overrides) VALUES(?,?,?,?,?)",
+                    (name, icon, position, int(lst.get("created_at") or now), overrides),
+                )
+                list_id = cur.lastrowid
+            # Subreddits within this list
+            for sub in (lst.get("subreddits") or []):
+                sub_name = (sub.get("name") or "").strip().lower()
+                if not sub_name:
+                    continue
+                db.execute(
+                    "INSERT INTO subscribed_subreddits(list_id, name, added_at, active, weight, sort_override) "
+                    "VALUES(?,?,?,?,?,?) "
+                    "ON CONFLICT(list_id, name) DO UPDATE SET "
+                    "  active=excluded.active, weight=excluded.weight, sort_override=excluded.sort_override",
+                    (
+                        list_id,
+                        sub_name,
+                        int(sub.get("added_at") or now),
+                        1 if sub.get("active", True) else 0,
+                        float(sub.get("weight", 1.0) or 1.0),
+                        sub.get("sort_override"),
+                    ),
+                )
+    else:
+        # Legacy v1 payload: drop everything into the default list
+        for sub in (payload.get("subreddits") or []):
+            name = (sub.get("name") or "").strip().lower()
+            if not name:
+                continue
+            db.execute(
+                "INSERT INTO subscribed_subreddits(list_id, name, added_at, active, weight, sort_override) "
+                "VALUES(1, ?,?,?,?,?) "
+                "ON CONFLICT(list_id, name) DO UPDATE SET "
+                "  active=excluded.active, weight=excluded.weight, sort_override=excluded.sort_override",
+                (
+                    name,
+                    int(sub.get("added_at") or now),
+                    1 if sub.get("active", True) else 0,
+                    float(sub.get("weight", 1.0) or 1.0),
+                    sub.get("sort_override"),
+                ),
+            )
 
     # Blocklist (replace)
     if "blocklist" in payload:

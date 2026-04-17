@@ -19,6 +19,7 @@ from routes.blocklist import bp as blocklist_bp
 from routes.collect import bp as collect_bp
 from routes.feed import bp as feed_bp
 from routes.health import bp as health_bp
+from routes.lists import bp as lists_bp
 from routes.posts import bp as posts_bp
 from routes.settings import bp as settings_bp
 from routes.stats import bp as stats_bp
@@ -50,7 +51,7 @@ def create_app() -> Flask:
     app.teardown_appcontext(close_db)
 
     # API blueprints
-    for bp in (health_bp, collect_bp, feed_bp, subs_bp, settings_bp, posts_bp, blocklist_bp, stats_bp):
+    for bp in (health_bp, collect_bp, feed_bp, subs_bp, lists_bp, settings_bp, posts_bp, blocklist_bp, stats_bp):
         app.register_blueprint(bp, url_prefix="/api")
 
     # Start background collection scheduler

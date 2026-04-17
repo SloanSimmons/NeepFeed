@@ -48,11 +48,13 @@ def new_connection() -> sqlite3.Connection:
 
 
 def init_schema() -> None:
-    """Create tables / indexes / FTS if they don't exist."""
+    """Create tables / indexes / FTS if they don't exist; then run migrations."""
     sql = SCHEMA_PATH.read_text(encoding="utf-8")
     conn = _connect(_db_path())
     try:
         conn.executescript(sql)
+        from migrations import run_migrations  # lazy import to avoid cycle
+        run_migrations(conn)
     finally:
         conn.close()
 

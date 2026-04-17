@@ -56,9 +56,12 @@ def recompute_all_scores(conn: sqlite3.Connection) -> int:
     window_h = float(cfg.get("time_window_hours", "96"))
     new_sub_weight = float(cfg.get("new_sub_weight", "1.5"))
 
-    # Index per-sub weights & new-boost flags
+    # Aggregate per-sub weights across lists: highest weight wins in "All Lists"
+    # mode (which is what the stored calculated_score represents).
+    # New-sub boost applies if ANY list-membership has the boost active.
     sub_rows = conn.execute(
-        "SELECT name, weight, is_new_boost FROM subscribed_subreddits"
+        "SELECT name, MAX(weight) AS weight, MAX(is_new_boost) AS is_new_boost "
+        "FROM subscribed_subreddits GROUP BY name"
     ).fetchall()
     weights = {r["name"]: float(r["weight"] or 1.0) for r in sub_rows}
     new_boost = {r["name"]: bool(r["is_new_boost"]) for r in sub_rows}
@@ -135,6 +138,7 @@ class FeedQuery:
     time_window_hours: float = 96.0
     subreddit: str | None = None   # filter to single sub
     search: str | None = None      # FTS5 query; None => all
+    list_ids: list[int] | None = None  # None => All Lists; otherwise filter to these list ids
 
 
 def _row_to_dict(row: sqlite3.Row) -> dict:
@@ -294,6 +298,13 @@ def get_feed(conn: sqlite3.Connection, q: FeedQuery) -> dict:
     if q.subreddit:
         where.append("p.subreddit = ?")
         params.append(q.subreddit.lower())
+    if q.list_ids:
+        placeholders = ",".join(["?"] * len(q.list_ids))
+        where.append(
+            f"p.subreddit IN (SELECT name FROM subscribed_subreddits "
+            f"WHERE list_id IN ({placeholders}) AND active=1)"
+        )
+        params.extend(q.list_ids)
 
     hide_seen_effective = q.hide_seen or hide_seen_setting
     if hide_seen_effective:

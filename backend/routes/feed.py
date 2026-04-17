@@ -24,6 +24,16 @@ def feed():
     min_score_default = int(get_config("min_score_threshold", "10") or 10)
     window_default = float(get_config("time_window_hours", "96") or 96)
 
+    # `list=all` or omitted → no filter (All Lists mode)
+    # `list=1` or `list=1,3` → filter to those list ids
+    list_ids = None
+    raw_list = (args.get("list") or "").strip().lower()
+    if raw_list and raw_list != "all":
+        try:
+            list_ids = [int(x) for x in raw_list.split(",") if x.strip()]
+        except ValueError:
+            return jsonify({"error": "list must be 'all' or comma-separated ids"}), 400
+
     q = FeedQuery(
         sort=(args.get("sort") or sort_default).lower(),
         limit=min(100, max(1, int(args.get("limit", 25)))),
@@ -34,6 +44,7 @@ def feed():
         time_window_hours=float(args.get("window", window_default)),
         subreddit=(args.get("subreddit") or None),
         search=(args.get("q") or None),
+        list_ids=list_ids,
     )
 
     if q.sort not in ("calculated", "score", "recency", "velocity"):
