@@ -5,14 +5,17 @@ import Feed from './components/Feed.jsx';
 import FreshBatchBanner from './components/FreshBatchBanner.jsx';
 import EmptyState from './components/EmptyState.jsx';
 import SettingsModal from './components/SettingsModal.jsx';
+import SkinPreviewBar from './components/SkinPreviewBar.jsx';
 import { useFeed } from './hooks/useFeed.js';
 import { useSettings } from './hooks/useSettings.js';
 import { useStats } from './hooks/useStats.js';
 import { useSeenTracking } from './hooks/useSeenTracking.js';
 import { useKeyboardNav } from './hooks/useKeyboardNav.js';
+import { useSkin } from './hooks/useSkin.js';
 
 export default function App() {
   const { settings, update: updateSettings } = useSettings();
+  const skin = useSkin();
   const [sort, setSort] = useState('calculated');
   const [search, setSearch] = useState('');
   const [searchDebounced, setSearchDebounced] = useState('');
@@ -137,7 +140,17 @@ export default function App() {
         onClose={() => setSettingsOpen(false)}
         settings={settings}
         onUpdate={updateSettings}
+        skin={skin}
       />
+
+      {skin.isPreviewing && (
+        <SkinPreviewBar
+          skin={skin.preview}
+          contrastIssues={skin.contrastIssues}
+          onApply={skin.applyPreview}
+          onCancel={skin.cancelPreview}
+        />
+      )}
 
       <main className="max-w-3xl mx-auto px-2 sm:px-4 py-4 sm:py-6">
         {posts.length === 0 && !loading ? (

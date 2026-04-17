@@ -4,30 +4,37 @@ export default {
   content: ['./index.html', './src/**/*.{js,jsx,ts,tsx}'],
   theme: {
     extend: {
+      // Color tokens reference CSS custom properties so skins can override
+      // them at runtime without rebuilding. For Tailwind utilities that
+      // need alpha (bg-black/40, border-white/5, etc.), we keep using
+      // Tailwind's built-in palette rather than these skin-driven tokens.
       colors: {
-        // Modern-dark, media-forward palette
         bg: {
-          DEFAULT: '#0b0d10',
-          card: '#14171c',
-          elev: '#1a1e25',
+          DEFAULT: 'var(--nf-bg-primary)',
+          card:    'var(--nf-bg-secondary)',
+          elev:    'var(--nf-bg-tertiary)',
         },
         fg: {
-          DEFAULT: '#e8ebef',
-          muted: '#8a939f',
-          dim: '#5a6370',
+          DEFAULT: 'var(--nf-text-primary)',
+          muted:   'var(--nf-text-secondary)',
+          dim:     'var(--nf-text-muted)',
         },
         brand: {
-          DEFAULT: '#ff6b3d',  // orange accent (Reddit-ish but less loud)
-          hover: '#ff855e',
+          DEFAULT: 'var(--nf-accent)',
+          hover:   'var(--nf-accent-hover)',
         },
-        seen: '#3a4150',
+        seen: 'var(--nf-seen)',
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],
+        // Single entry referencing the skin font-family var.
+        sans: ['var(--nf-font-family)'],
         mono: ['JetBrains Mono', 'SF Mono', 'Menlo', 'monospace'],
       },
       borderRadius: {
-        card: '14px',
+        card: 'var(--nf-card-radius)',
+      },
+      maxWidth: {
+        feed: 'var(--nf-feed-max-width)',
       },
     },
   },

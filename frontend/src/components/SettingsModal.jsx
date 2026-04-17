@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from '../api/client.js';
 import SubredditManager from './SubredditManager.jsx';
 import BlocklistManager from './BlocklistManager.jsx';
+import SkinManager from './SkinManager.jsx';
 
 /** Setting row helpers */
 function Row({ label, hint, children }) {
@@ -62,7 +63,7 @@ function FreshnessSlider({ value, onChange }) {
   );
 }
 
-export default function SettingsModal({ open, onClose, settings, onUpdate }) {
+export default function SettingsModal({ open, onClose, settings, onUpdate, skin }) {
   const [tab, setTab] = useState('subs');
   const modalRef = useRef(null);
 
@@ -123,6 +124,7 @@ export default function SettingsModal({ open, onClose, settings, onUpdate }) {
     { id: 'scoring',  label: 'Scoring' },
     { id: 'display',  label: 'Display' },
     { id: 'media',    label: 'Media' },
+    { id: 'skins',    label: 'Skins' },
     { id: 'blocklist', label: 'Blocklist' },
     { id: 'data',     label: 'Data' },
   ];
@@ -246,6 +248,8 @@ export default function SettingsModal({ open, onClose, settings, onUpdate }) {
               </Row>
             </div>
           )}
+
+          {tab === 'skins' && skin && <SkinManager skin={skin} />}
 
           {tab === 'blocklist' && <BlocklistManager />}
 

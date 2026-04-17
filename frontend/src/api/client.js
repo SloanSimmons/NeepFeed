@@ -66,4 +66,11 @@ export const api = {
   stats: () => req('/api/stats'),
   triggerCollection: () => req('/api/collect/trigger', { method: 'POST' }),
   health: () => req('/api/health'),
+
+  // Skins
+  skins: () => req('/api/skins'),
+  saveSkin: (skin) => req('/api/skins', { method: 'POST', body: skin }),
+  updateSkin: (name, skin) => req(`/api/skins/${encodeURIComponent(name)}`, { method: 'PATCH', body: skin }),
+  deleteSkin: (name) => req(`/api/skins/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+  setActiveSkin: (name) => req('/api/skins/active', { method: 'POST', body: { name } }),
 };

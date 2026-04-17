@@ -2,34 +2,122 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ==========================================================================
+   NeepFeed CSS custom properties — "skin" variables.
+   Defaults below define the "Dark" built-in skin. Skins override via
+   inline styles on <html> (useSkin hook).
+   ========================================================================== */
+:root {
+  /* Backgrounds */
+  --nf-bg-primary:    #0b0d10;
+  --nf-bg-secondary:  #14171c;
+  --nf-bg-tertiary:   #1a1e25;
+
+  /* Text */
+  --nf-text-primary:   #e8ebef;
+  --nf-text-secondary: #8a939f;
+  --nf-text-muted:     #5a6370;
+
+  /* Accent & interactive */
+  --nf-accent:        #ff6b3d;
+  --nf-accent-hover:  #ff855e;
+  --nf-upvote:        #ff6b3d;
+  --nf-downvote:      #6b7280;
+  --nf-comment-color: #8a939f;
+  --nf-nsfw-badge:    #ef4444;
+
+  /* Flair & tags */
+  --nf-flair-bg:   rgba(255, 107, 61, 0.10);
+  --nf-flair-text: #ff6b3d;
+
+  /* Borders & shadows */
+  --nf-border:       rgba(255, 255, 255, 0.05);
+  --nf-border-focus: #ff6b3d;
+  --nf-shadow:       0 10px 15px -3px rgba(0, 0, 0, 0.3);
+
+  /* UI elements */
+  --nf-header-bg:      rgba(11, 13, 16, 0.75);
+  --nf-modal-overlay:  rgba(0, 0, 0, 0.7);
+  --nf-modal-bg:       #14171c;
+  --nf-button-bg:      #ff6b3d;
+  --nf-button-text:    #000000;
+  --nf-button-hover:   #ff855e;
+  --nf-input-bg:       #0b0d10;
+  --nf-input-border:   rgba(255, 255, 255, 0.10);
+  --nf-input-focus:    rgba(255, 107, 61, 0.40);
+  --nf-scrollbar-thumb: #3a4150;
+  --nf-scrollbar-track: #0b0d10;
+  --nf-link-color:     #ff6b3d;
+  --nf-link-hover:     #ff855e;
+  --nf-video-overlay:  rgba(0, 0, 0, 0.5);
+
+  /* Status */
+  --nf-success: #22c55e;
+  --nf-warning: #f59e0b;
+  --nf-error:   #ef4444;
+
+  /* Feed-specific */
+  --nf-seen: #3a4150;
+
+  /* Typography */
+  --nf-font-family:   "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --nf-font-size-base: 14px;
+  --nf-font-size-sm:   12px;
+  --nf-font-size-lg:   18px;
+  --nf-font-size-xl:   24px;
+
+  /* Spacing & shape */
+  --nf-card-radius:    14px;
+  --nf-card-padding:   16px;
+  --nf-feed-max-width: 768px;
+}
+
 @layer base {
   html, body, #root { height: 100%; }
   body {
-    background: #0b0d10;
-    color: #e8ebef;
+    background: var(--nf-bg-primary);
+    color: var(--nf-text-primary);
+    font-family: var(--nf-font-family);
   }
-  /* Smooth scroll for keyboard-nav (j/k) in M4 */
   html { scroll-behavior: smooth; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: var(--nf-scrollbar-track); }
+  ::-webkit-scrollbar-thumb { background: var(--nf-scrollbar-thumb); border-radius: 5px; }
 }
 
 @layer components {
   .card {
-    @apply bg-bg-card rounded-card border border-white/5 shadow-lg shadow-black/30;
+    background: var(--nf-bg-secondary);
+    border-radius: var(--nf-card-radius);
+    border: 1px solid var(--nf-border);
+    box-shadow: var(--nf-shadow);
   }
   .btn {
-    @apply inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium
-           bg-bg-elev hover:bg-white/5 border border-white/5 transition-colors;
+    @apply inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors;
+    background: var(--nf-bg-tertiary);
+    border: 1px solid var(--nf-border);
+  }
+  .btn:hover {
+    background: rgba(255, 255, 255, 0.05);
   }
   .btn-primary {
-    @apply btn bg-brand hover:bg-brand-hover text-black border-transparent;
+    @apply btn;
+    background: var(--nf-button-bg);
+    color: var(--nf-button-text);
+    border-color: transparent;
+  }
+  .btn-primary:hover {
+    background: var(--nf-button-hover);
   }
   .kbd {
-    @apply inline-block px-1.5 py-0.5 rounded border border-white/10 bg-bg-elev
-           text-fg-muted text-[10px] font-mono;
+    @apply inline-block px-1.5 py-0.5 rounded text-[10px] font-mono;
+    background: var(--nf-bg-tertiary);
+    color: var(--nf-text-secondary);
+    border: 1px solid var(--nf-border);
   }
 }
 
-/* Clamp utility (tailwind has line-clamp-3 via plugin; use custom for safety) */
+/* Line clamp utility (Tailwind 3 has it built-in but keep for safety). */
 .line-clamp-3 {
   display: -webkit-box;
   -webkit-line-clamp: 3;

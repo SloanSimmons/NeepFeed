@@ -9,6 +9,22 @@
     <link rel="manifest" href="/manifest.json" />
   </head>
   <body class="bg-bg text-fg font-sans antialiased">
+    <!-- Flash-of-unstyled prevention: apply the active skin's variables
+         before React mounts so the correct theme is visible on first paint. -->
+    <script>
+      (function () {
+        try {
+          var raw = localStorage.getItem('neepfeed_active_skin');
+          if (!raw) return;
+          var skin = JSON.parse(raw);
+          var vars = (skin && skin.variables) || {};
+          var root = document.documentElement;
+          Object.keys(vars).forEach(function (k) {
+            if (k.indexOf('--nf-') === 0) root.style.setProperty(k, vars[k]);
+          });
+        } catch (e) { /* fall through to :root defaults */ }
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
