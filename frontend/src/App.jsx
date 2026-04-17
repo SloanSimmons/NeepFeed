@@ -4,6 +4,7 @@ import Header from './components/Header.jsx';
 import Feed from './components/Feed.jsx';
 import FreshBatchBanner from './components/FreshBatchBanner.jsx';
 import EmptyState from './components/EmptyState.jsx';
+import SettingsModal from './components/SettingsModal.jsx';
 import { useFeed } from './hooks/useFeed.js';
 import { useSettings } from './hooks/useSettings.js';
 import { useStats } from './hooks/useStats.js';
@@ -90,10 +91,8 @@ export default function App() {
     onNearEnd: () => { if (hasMore && !loading) loadMore(); },
   });
 
-  const onOpenSettings = () => {
-    // Settings modal is M5. For now, a placeholder alert.
-    alert('Settings panel arrives in M5. Use the subreddit/config API for now.');
-  };
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const onOpenSettings = () => setSettingsOpen(true);
 
   const onTriggerCollection = async () => {
     try {
@@ -132,6 +131,13 @@ export default function App() {
       />
 
       <FreshBatchBanner count={freshBatch} onClick={onFreshBatchClick} />
+
+      <SettingsModal
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        settings={settings}
+        onUpdate={updateSettings}
+      />
 
       <main className="max-w-3xl mx-auto px-2 sm:px-4 py-4 sm:py-6">
         {posts.length === 0 && !loading ? (
