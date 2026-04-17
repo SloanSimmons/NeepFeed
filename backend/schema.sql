@@ -112,7 +112,7 @@ CREATE TABLE IF NOT EXISTS user_config (
 
 -- Defaults (INSERT OR IGNORE so we don't overwrite on re-run)
 INSERT OR IGNORE INTO user_config(key,value) VALUES
-  ('decay_rate',             '1.0'),
+  ('decay_rate',             '0.7'),  -- variety-leaning: older high-score posts stay visible
   ('time_window_hours',      '96'),
   ('min_score_threshold',    '10'),
   ('new_sub_weight',         '1.5'),

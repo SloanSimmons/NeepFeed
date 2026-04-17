@@ -15,8 +15,14 @@ from flask_cors import CORS
 
 from collection import start_scheduler
 from db import close_db, init_schema
+from routes.blocklist import bp as blocklist_bp
 from routes.collect import bp as collect_bp
+from routes.feed import bp as feed_bp
 from routes.health import bp as health_bp
+from routes.posts import bp as posts_bp
+from routes.settings import bp as settings_bp
+from routes.stats import bp as stats_bp
+from routes.subreddits import bp as subs_bp
 
 load_dotenv()
 
@@ -44,8 +50,8 @@ def create_app() -> Flask:
     app.teardown_appcontext(close_db)
 
     # API blueprints
-    app.register_blueprint(health_bp, url_prefix="/api")
-    app.register_blueprint(collect_bp, url_prefix="/api")
+    for bp in (health_bp, collect_bp, feed_bp, subs_bp, settings_bp, posts_bp, blocklist_bp, stats_bp):
+        app.register_blueprint(bp, url_prefix="/api")
 
     # Start background collection scheduler
     start_scheduler()

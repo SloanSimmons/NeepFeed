@@ -15,6 +15,7 @@ from typing import Iterable
 
 from db import new_connection
 from reddit_client import PostData, RedditClient, get_client
+from scoring import recompute_all_scores
 from url_utils import url_hash
 
 log = logging.getLogger("neepfeed.collection")
@@ -168,6 +169,8 @@ def run_collection_once(client: RedditClient | None = None) -> dict:
                         stats["inserted" if inserted else "updated"] += 1
 
                 _update_new_sub_boosts(conn, now)
+                # Recompute baseline scores for all posts in the window
+                recompute_all_scores(conn)
                 conn.execute("COMMIT")
             except Exception:
                 conn.execute("ROLLBACK")
