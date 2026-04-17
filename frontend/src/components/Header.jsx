@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import SortModeToggle from './SortModeToggle.jsx';
 import ModeToggle from './ModeToggle.jsx';
 import ListSelector from './ListSelector.jsx';
+import ContentFilterToggle from './ContentFilterToggle.jsx';
 import { IconSearch, IconSettings, IconMenu, IconClose } from './icons.jsx';
 
 /**
@@ -24,6 +25,7 @@ export default function Header({
   mode, onModeChange, bookmarkCount,
   lists, activeListId, onListChange, onCreateList,
   onOpenSidebar,
+  contentFilter, onContentFilterChange,
 }) {
   // Mobile search expand state
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
@@ -89,7 +91,7 @@ export default function Header({
           </div>
         )}
 
-        {/* Right cluster: list / sort / settings */}
+        {/* Right cluster: list / content filter / sort / settings */}
         <div className="flex items-center gap-2">
           {mode !== 'bookmarks' && lists && onListChange && (
             <ListSelector
@@ -97,7 +99,12 @@ export default function Header({
               activeId={activeListId}
               onSelect={onListChange}
               onCreate={onCreateList}
+              contentFilter={contentFilter}
+              onContentFilterChange={onContentFilterChange}
             />
+          )}
+          {mode !== 'bookmarks' && contentFilter && onContentFilterChange && (
+            <ContentFilterToggle value={contentFilter} onChange={onContentFilterChange} />
           )}
           {mode !== 'bookmarks' && (
             <SortModeToggle value={sort} onChange={onSortChange} />

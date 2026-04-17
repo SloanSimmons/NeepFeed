@@ -27,6 +27,16 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Content filter: 'sfw' hides NSFW, 'all' shows everything. Persisted in
+  // localStorage; seeded from the legacy settings.hide_nsfw default on first
+  // load so existing users keep their preference.
+  const [contentFilter, setContentFilterState] = useState(() => {
+    try {
+      const saved = localStorage.getItem('neepfeed_content_filter');
+      if (saved === 'sfw' || saved === 'all') return saved;
+    } catch {}
+    return null; // decided after settings load below
+  });
   const searchInputRef = useRef(null);
 
   // Sync sort from settings on first load
@@ -36,6 +46,20 @@ export default function App() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings?.sort_mode]);
+
+  // Seed contentFilter from settings.hide_nsfw the first time we load,
+  // only if nothing was persisted locally.
+  useEffect(() => {
+    if (contentFilter != null) return;
+    if (!settings) return;
+    setContentFilterState(settings.hide_nsfw ? 'sfw' : 'all');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings]);
+
+  const setContentFilter = useCallback((next) => {
+    setContentFilterState(next);
+    try { localStorage.setItem('neepfeed_content_filter', next); } catch {}
+  }, []);
 
   // Debounce search → feed
   useEffect(() => {
@@ -54,7 +78,9 @@ export default function App() {
     sort,
     search: searchDebounced || undefined,
     list: listParam,
-    hideNsfw: settings?.hide_nsfw,
+    // contentFilter is the authoritative NSFW source; settings.hide_nsfw
+    // only seeds the initial value on first run.
+    hideNsfw: contentFilter === 'sfw',
     hideSeen: settings?.hide_seen,
     prefetch: settings?.prefetch_enabled !== false,
   });
@@ -152,6 +178,8 @@ export default function App() {
         onListChange={listsHook.setActiveListId}
         onCreateList={() => { setSettingsTab('lists'); setSettingsOpen(true); }}
         onOpenSidebar={() => setSidebarOpen(true)}
+        contentFilter={contentFilter}
+        onContentFilterChange={setContentFilter}
       />
 
       <MobileSidebar
@@ -167,6 +195,8 @@ export default function App() {
         sort={sort}
         onSortChange={onSortChange}
         onOpenSettings={() => { setSettingsTab(null); setSettingsOpen(true); }}
+        contentFilter={contentFilter}
+        onContentFilterChange={setContentFilter}
       />
 
       <FreshBatchBanner count={freshBatch} onClick={onFreshBatchClick} />

@@ -3,17 +3,41 @@ import { IconChevron } from './icons.jsx';
 import { ALL_LISTS } from '../hooks/useLists.js';
 
 /**
- * Dropdown that selects the active list for the feed view.
+ * Dropdown that selects the active custom feed.
  *
- * Options:
- *   - All Lists (sentinel 'all') — feed merges posts across every active sub
- *   - Each list with its icon + sub count
- *   - Create new list (callback; parent opens the Lists settings tab)
+ * Top of the dropdown: two "Everything" presets that combine scope with a
+ * content-filter policy:
+ *   - Everything (SFW)        — scope=all, contentFilter=sfw
+ *   - Everything (Uncensored) — scope=all, contentFilter=all
+ * Picking one sets both pieces of state. The header's ContentFilterToggle
+ * mirrors the current filter and lets the user flip it independently for
+ * any feed view (including the Everything presets).
+ *
+ * Below: each user-defined list. Picking one switches scope only; the
+ * current content filter carries over from wherever it was.
  */
-export default function ListSelector({ lists, activeId, onSelect, onCreate }) {
+export default function ListSelector({
+  lists, activeId, onSelect, onCreate,
+  contentFilter, onContentFilterChange,
+}) {
   const [open, setOpen] = useState(false);
-
   const close = () => setTimeout(() => setOpen(false), 100);
+
+  // When scope=all, the two Everything presets light up based on the
+  // current content filter. "All Lists" is always a third option that
+  // doesn't touch the filter on click — useful when the user wants to
+  // flip the toggle independently.
+  const scopeIsAll = activeId === ALL_LISTS;
+  const everythingSfwActive = scopeIsAll && contentFilter === 'sfw';
+  const everythingAllActive = scopeIsAll && contentFilter === 'all';
+
+  const pickEverything = (filter) => {
+    onContentFilterChange?.(filter);
+    onSelect(ALL_LISTS);
+    setOpen(false);
+  };
+  const pickAllLists = () => { onSelect(ALL_LISTS); setOpen(false); };
+  const pickList = (id) => { onSelect(id); setOpen(false); };
 
   return (
     <div className="relative">
@@ -31,14 +55,35 @@ export default function ListSelector({ lists, activeId, onSelect, onCreate }) {
       {open && (
         <div
           role="listbox"
-          className="absolute right-0 mt-1 w-60 bg-bg-elev border border-white/10 rounded-lg shadow-xl z-30 overflow-hidden"
+          className="absolute right-0 mt-1 w-64 bg-bg-elev border border-white/10 rounded-lg shadow-xl z-30 overflow-hidden"
         >
           <Row
-            active={activeId === ALL_LISTS}
+            active={everythingSfwActive}
+            icon="🛡️"
+            name="Everything (SFW)"
+            hint="All lists merged · NSFW hidden"
+            onClick={() => pickEverything('sfw')}
+          />
+          <Row
+            active={everythingAllActive}
+            icon="🌐"
+            name="Everything (Uncensored)"
+            hint="All lists merged · NSFW included"
+            onClick={() => pickEverything('all')}
+          />
+          <div className="border-t border-white/5" />
+          <Row
+            // Only highlight "All Lists" when scope=all AND neither
+            // Everything preset matches the current filter — in practice,
+            // this row stays unhighlighted because one of the presets
+            // above always matches a valid filter. It's kept as a
+            // deliberate shortcut for "go to all scope without changing
+            // my filter choice."
+            active={false}
             icon="🗂️"
             name="All Lists"
-            hint="Merged feed across every list"
-            onClick={() => { onSelect(ALL_LISTS); setOpen(false); }}
+            hint="Merged feed · respects the filter toggle"
+            onClick={pickAllLists}
           />
           {lists.length > 0 && <div className="border-t border-white/5" />}
           {lists.map((l) => (
@@ -48,7 +93,7 @@ export default function ListSelector({ lists, activeId, onSelect, onCreate }) {
               icon={l.icon}
               name={l.name}
               hint={`${l.active_count ?? l.subreddit_count ?? 0} sub${(l.active_count ?? l.subreddit_count ?? 0) === 1 ? '' : 's'}`}
-              onClick={() => { onSelect(l.id); setOpen(false); }}
+              onClick={() => pickList(l.id)}
             />
           ))}
           {onCreate && (

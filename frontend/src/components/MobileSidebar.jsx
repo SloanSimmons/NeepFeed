@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { SORT_OPTIONS } from './SortModeToggle.jsx';
 import { ALL_LISTS } from '../hooks/useLists.js';
 import { IconBookmark } from './icons.jsx';
+import ContentFilterToggle from './ContentFilterToggle.jsx';
 
 /**
  * Slide-in left drawer for mobile. Contains nav controls (Feed/Bookmarks
@@ -17,6 +18,7 @@ export default function MobileSidebar({
   lists, activeListId, onListChange, onCreateList,
   sort, onSortChange,
   onOpenSettings,
+  contentFilter, onContentFilterChange,
 }) {
   // ESC to close
   useEffect(() => {
@@ -79,13 +81,36 @@ export default function MobileSidebar({
 
           {mode !== 'bookmarks' && (
             <>
+              {contentFilter && onContentFilterChange && (
+                <Section label="Content">
+                  <ContentFilterToggle
+                    value={contentFilter}
+                    onChange={(v) => { onContentFilterChange(v); /* stay in drawer; small interaction */ }}
+                  />
+                </Section>
+              )}
+
               <Section label="Custom Feeds">
                 <div className="space-y-1">
                   <DrawerRow
-                    active={activeListId === ALL_LISTS}
+                    active={activeListId === ALL_LISTS && contentFilter === 'sfw'}
+                    icon="🛡️"
+                    name="Everything (SFW)"
+                    hint="All lists merged · NSFW hidden"
+                    onClick={() => { onContentFilterChange?.('sfw'); pick(onListChange)(ALL_LISTS); }}
+                  />
+                  <DrawerRow
+                    active={activeListId === ALL_LISTS && contentFilter === 'all'}
+                    icon="🌐"
+                    name="Everything (Uncensored)"
+                    hint="All lists merged · NSFW included"
+                    onClick={() => { onContentFilterChange?.('all'); pick(onListChange)(ALL_LISTS); }}
+                  />
+                  <DrawerRow
+                    active={false}
                     icon="🗂️"
                     name="All Lists"
-                    hint="Merged feed across every list"
+                    hint="Respects the content toggle"
                     onClick={() => pick(onListChange)(ALL_LISTS)}
                   />
                   {lists.map((l) => (

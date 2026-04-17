@@ -222,7 +222,12 @@ export default function SettingsModal({ open, onClose, settings, onUpdate, skin,
                   <option value="velocity">Velocity</option>
                 </select>
               </Row>
-              <Row label="Hide NSFW Content"><Toggle checked={!!s.hide_nsfw} onChange={onField('hide_nsfw')} /></Row>
+              <Row
+                label="Hide NSFW Content"
+                hint="Managed by the header's SFW / All toggle now — this acts as the default on first load."
+              >
+                <Toggle checked={!!s.hide_nsfw} onChange={onField('hide_nsfw')} />
+              </Row>
               <Row label="Hide Seen Posts" hint="Completely remove already-viewed posts.">
                 <Toggle checked={!!s.hide_seen} onChange={onField('hide_seen')} />
               </Row>
