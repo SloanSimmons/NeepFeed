@@ -1,4 +1,5 @@
 import SortModeToggle from './SortModeToggle.jsx';
+import ModeToggle from './ModeToggle.jsx';
 import { IconSearch, IconSettings } from './icons.jsx';
 
 export default function Header({
@@ -7,6 +8,7 @@ export default function Header({
   onOpenSettings,
   search, onSearchChange,
   searchInputRef,
+  mode, onModeChange, bookmarkCount,
 }) {
   return (
     <header className="sticky top-0 z-20 backdrop-blur-md bg-bg/75 border-b border-white/5">
@@ -26,14 +28,30 @@ export default function Header({
               value={search || ''}
               onChange={(e) => onSearchChange?.(e.target.value)}
               placeholder="Search…   (press / )"
-              className="w-full bg-bg-elev border border-white/5 rounded-lg pl-8 pr-3 py-1.5 text-sm
+              className="w-full bg-bg-elev border border-white/5 rounded-lg pl-8 pr-8 py-1.5 text-sm
                          placeholder:text-fg-dim focus:outline-none focus:border-brand/40"
             />
+            {search && (
+              <button
+                type="button"
+                onClick={() => onSearchChange?.('')}
+                className="absolute right-1 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg w-6 h-6 flex items-center justify-center"
+                aria-label="Clear search"
+                title="Clear (Esc)"
+              >
+                ✕
+              </button>
+            )}
           </label>
         </div>
 
         <div className="flex items-center gap-2">
-          <SortModeToggle value={sort} onChange={onSortChange} />
+          {mode && onModeChange && (
+            <ModeToggle value={mode} onChange={onModeChange} bookmarkCount={bookmarkCount} />
+          )}
+          {mode !== 'bookmarks' && (
+            <SortModeToggle value={sort} onChange={onSortChange} />
+          )}
           <button
             onClick={onOpenSettings}
             className="btn text-sm"
@@ -46,11 +64,18 @@ export default function Header({
         </div>
       </div>
 
-      {stats && (
+      {(stats || search) && (
         <div className="max-w-3xl mx-auto px-4 pb-2 text-xs text-fg-dim flex items-center gap-3 flex-wrap">
-          <span>{stats.total_posts} posts · {stats.active_subreddits}/{stats.total_subreddits} subs</span>
-          {stats.last_collection_at && (
-            <span>·  last refresh: {relativeSec(Date.now() / 1000 - stats.last_collection_at)}</span>
+          {stats && (
+            <>
+              <span>{stats.total_posts} posts · {stats.active_subreddits}/{stats.total_subreddits} subs</span>
+              {stats.last_collection_at && (
+                <span>· last refresh: {relativeSec(Date.now() / 1000 - stats.last_collection_at)}</span>
+              )}
+            </>
+          )}
+          {search && (
+            <span className="text-brand">· searching stored posts for "{search}"</span>
           )}
         </div>
       )}

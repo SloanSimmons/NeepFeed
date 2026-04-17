@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from './api/client.js';
 import Header from './components/Header.jsx';
 import Feed from './components/Feed.jsx';
@@ -16,10 +16,12 @@ import { useSkin } from './hooks/useSkin.js';
 export default function App() {
   const { settings, update: updateSettings } = useSettings();
   const skin = useSkin();
+  const [mode, setMode] = useState('feed');              // 'feed' | 'bookmarks'
   const [sort, setSort] = useState('calculated');
   const [search, setSearch] = useState('');
   const [searchDebounced, setSearchDebounced] = useState('');
   const [freshBatch, setFreshBatch] = useState(0);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const searchInputRef = useRef(null);
 
   // Sync sort from settings on first load
@@ -36,7 +38,10 @@ export default function App() {
     return () => clearTimeout(t);
   }, [search]);
 
-  const { posts, loading, hasMore, loadMore, setPosts } = useFeed({
+  const {
+    posts, loading, hasMore, loadMore, setPosts, error, retry,
+  } = useFeed({
+    source: mode,                              // 'feed' or 'bookmarks'
     sort,
     search: searchDebounced || undefined,
     hideNsfw: settings?.hide_nsfw,
@@ -88,19 +93,18 @@ export default function App() {
     onFocusSearch: () => searchInputRef.current?.focus(),
     onEscape: () => {
       if (document.activeElement === searchInputRef.current) {
-        searchInputRef.current.blur();
+        if (search) setSearch('');
+        else searchInputRef.current.blur();
       }
     },
     onNearEnd: () => { if (hasMore && !loading) loadMore(); },
   });
 
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const onOpenSettings = () => setSettingsOpen(true);
-
   const onTriggerCollection = async () => {
     try {
       await api.triggerCollection();
       await refreshStats();
+      retry();
     } catch (e) {
       console.error(e);
     }
@@ -108,12 +112,8 @@ export default function App() {
 
   const onFreshBatchClick = () => {
     setFreshBatch(0);
-    // Reset the feed to get new posts at top
     window.scrollTo({ top: 0, behavior: 'smooth' });
-    // Force a refetch via sort-change "trick": same sort but re-keyed
-    // Simplest: reload page. Better: expose a reset() from useFeed. We have setPosts
-    // so just nudge via prefetch.
-    // For now, just scroll to top; user's next scroll will pull fresher-ranked data on next mount.
+    retry();
   };
 
   const onSortChange = (next) => {
@@ -121,16 +121,22 @@ export default function App() {
     updateSettings({ sort_mode: next }).catch(() => {});
   };
 
+  const bookmarkCount = stats?.bookmarks || 0;
+  const mainEmpty = posts.length === 0 && !loading && !error;
+
   return (
     <div className="min-h-full">
       <Header
         sort={sort}
         onSortChange={onSortChange}
         stats={stats}
-        onOpenSettings={onOpenSettings}
+        onOpenSettings={() => setSettingsOpen(true)}
         search={search}
         onSearchChange={setSearch}
         searchInputRef={searchInputRef}
+        mode={mode}
+        onModeChange={setMode}
+        bookmarkCount={bookmarkCount}
       />
 
       <FreshBatchBanner count={freshBatch} onClick={onFreshBatchClick} />
@@ -153,10 +159,17 @@ export default function App() {
       )}
 
       <main className="max-w-3xl mx-auto px-2 sm:px-4 py-4 sm:py-6">
-        {posts.length === 0 && !loading ? (
+        {mode === 'bookmarks' && mainEmpty ? (
+          <div className="card p-8 text-center">
+            <h2 className="text-xl font-semibold mb-2">No bookmarks yet</h2>
+            <p className="text-fg-muted">
+              Press <kbd className="kbd">b</kbd> on a post, or click the bookmark icon to save it here.
+            </p>
+          </div>
+        ) : mode === 'feed' && mainEmpty ? (
           <EmptyState
             stats={stats}
-            onOpenSettings={onOpenSettings}
+            onOpenSettings={() => setSettingsOpen(true)}
             onTriggerCollection={onTriggerCollection}
           />
         ) : (
@@ -169,15 +182,22 @@ export default function App() {
             onPostSeen={onPostVisibilityChange}
             onMuteRegister={onMuteRegister}
             onBookmarked={(id, next) => {
-              setPosts((prev) => prev.map((p) => (p.reddit_id === id ? { ...p, bookmarked: next } : p)));
+              setPosts((prev) => {
+                // In bookmarks mode, unbookmarking removes from the list
+                if (mode === 'bookmarks' && !next) {
+                  return prev.filter((p) => p.reddit_id !== id);
+                }
+                return prev.map((p) => (p.reddit_id === id ? { ...p, bookmarked: next } : p));
+              });
             }}
             onHidden={(id) => {
               setPosts((prev) => prev.filter((p) => p.reddit_id !== id));
             }}
+            error={error}
+            onRetry={retry}
           />
         )}
 
-        {/* Keyboard shortcut hint (subtle, dismissable in a later milestone) */}
         <footer className="mt-12 text-center text-xs text-fg-dim">
           <kbd className="kbd">j</kbd>/<kbd className="kbd">k</kbd> navigate ·{' '}
           <kbd className="kbd">o</kbd> open · <kbd className="kbd">c</kbd> comments ·{' '}

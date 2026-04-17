@@ -10,7 +10,15 @@ import { api } from '../api/client.js';
  * Triggers auto-fetch on mount + whenever deps (sort/hide_seen/etc) change.
  * When `prefetch` is true, pre-loads the next page as soon as current page resolves.
  */
-export function useFeed({ sort = 'calculated', hideNsfw, hideSeen, subreddit, search, prefetch = true } = {}) {
+export function useFeed({
+  sort = 'calculated',
+  hideNsfw,
+  hideSeen,
+  subreddit,
+  search,
+  source = 'feed',          // 'feed' | 'bookmarks'
+  prefetch = true,
+} = {}) {
   const [posts, setPosts] = useState([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
@@ -22,7 +30,7 @@ export function useFeed({ sort = 'calculated', hideNsfw, hideSeen, subreddit, se
   const prefetchRef = useRef(null);
   const limit = 25;
 
-  const deps = JSON.stringify({ sort, hideNsfw, hideSeen, subreddit, search });
+  const deps = JSON.stringify({ sort, hideNsfw, hideSeen, subreddit, search, source });
 
   const fetchPage = useCallback(async (nextOffset) => {
     setLoading(true);
@@ -31,6 +39,9 @@ export function useFeed({ sort = 'calculated', hideNsfw, hideSeen, subreddit, se
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     try {
+      if (source === 'bookmarks') {
+        return await api.bookmarks({ limit, offset: nextOffset });
+      }
       const params = { sort, limit, offset: nextOffset };
       if (hideNsfw) params.hide_nsfw = 'true';
       if (hideSeen) params.hide_seen = 'true';
@@ -98,5 +109,18 @@ export function useFeed({ sort = 'calculated', hideNsfw, hideSeen, subreddit, se
     }
   }, [loading, hasMore, offset, fetchPage, prefetch]);
 
-  return { posts, total, loading, error, hasMore, loadMore, reset, setPosts };
+  const retry = useCallback(async () => {
+    reset();
+    try {
+      const data = await fetchPage(0);
+      setPosts(data.posts || []);
+      setTotal(data.total || 0);
+      setOffset(data.posts?.length || 0);
+      setHasMore((data.posts?.length || 0) >= limit);
+    } catch (e) {
+      if (e.name !== 'AbortError') setError(e);
+    }
+  }, [reset, fetchPage]);
+
+  return { posts, total, loading, error, hasMore, loadMore, reset, setPosts, retry };
 }

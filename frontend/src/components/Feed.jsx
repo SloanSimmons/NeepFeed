@@ -15,6 +15,8 @@ export default function Feed({
   onMuteRegister,
   onBookmarked,
   onHidden,
+  error,
+  onRetry,
 }) {
   const sentinelRef = useRef(null);
 
@@ -34,6 +36,20 @@ export default function Feed({
     io.observe(el);
     return () => io.disconnect();
   }, [loading, hasMore, loadMore]);
+
+  if (error && posts.length === 0) {
+    return (
+      <div className="card p-6 text-center">
+        <div className="text-sm font-semibold mb-2">Couldn't load the feed.</div>
+        <div className="text-xs text-fg-muted mb-4 font-mono whitespace-pre-wrap">
+          {String(error?.message || error)}
+        </div>
+        {onRetry && (
+          <button onClick={onRetry} className="btn-primary text-sm">Retry</button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">

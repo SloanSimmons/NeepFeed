@@ -27,5 +27,14 @@
     </script>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
+    <script>
+      // Register the service worker for PWA + offline caching. Only in
+      // production builds (skipped when Vite runs on :5173 in dev).
+      if ('serviceWorker' in navigator && !/localhost:5173/.test(location.host)) {
+        window.addEventListener('load', function () {
+          navigator.serviceWorker.register('/sw.js').catch(function () {});
+        });
+      }
+    </script>
   </body>
 </html>

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Safe zone: inner 80% circle (per PWA maskable spec). -->
+  <rect width="512" height="512" fill="#0b0d10"/>
+  <g transform="translate(128,128)">
+    <path d="M16 212 L128 32 L240 212 Z M128 212 Q128 244 128 268" fill="#ff6b3d" stroke="#ff6b3d" stroke-width="2"/>
+    <circle cx="128" cy="244" r="20" fill="#ff6b3d"/>
+  </g>
+</svg>
