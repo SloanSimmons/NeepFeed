@@ -15,6 +15,7 @@ import time
 from flask import Blueprint, jsonify, request
 
 from db import get_db
+from routes.subreddits import _parse_import_payload
 
 bp = Blueprint("lists", __name__)
 
@@ -105,6 +106,116 @@ def create_list():
         raise
     row = db.execute("SELECT * FROM lists WHERE id=?", (cur.lastrowid,)).fetchone()
     return jsonify({"success": True, "list": _list_row_to_dict(row, db)})
+
+
+@bp.post("/lists/import")
+def import_list():
+    """Import a single list (name + icon + subreddits) as a new list.
+
+    Accepts either:
+      - Our native export shape:  {"name": "...", "icon": "...", "subreddits": [...]}
+      - A plain dict with `name` + a names array in any of `subreddits`,
+        `subs`, or `names` (strings or {name/display_name} objects)
+
+    If `body.mode == 'merge'` and a list with this name already exists, subs
+    are added to it instead of erroring. Default is `mode: 'new'` which
+    rejects duplicate names with 409.
+    """
+    # File upload or JSON body
+    if "file" in request.files:
+        try:
+            payload = json.loads(request.files["file"].read().decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as e:
+            return jsonify({"error": f"invalid JSON: {e}"}), 400
+    else:
+        payload = request.get_json(silent=True)
+        if payload is None:
+            return jsonify({"error": "expected JSON body or file upload"}), 400
+
+    if not isinstance(payload, dict):
+        return jsonify({"error": "payload must be a JSON object"}), 400
+
+    name = (payload.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "list name is required"}), 400
+    if len(name) > 40:
+        return jsonify({"error": "name too long (max 40)"}), 400
+
+    icon = (payload.get("icon") or "📋")[:8]
+    mode = (payload.get("mode") or "new").lower()
+    if mode not in ("new", "merge"):
+        return jsonify({"error": "mode must be 'new' or 'merge'"}), 400
+
+    # Collect subreddit names from any of the accepted shapes
+    sub_entries = (
+        payload.get("subreddits")
+        or payload.get("subs")
+        or payload.get("names")
+        or []
+    )
+    if not isinstance(sub_entries, list):
+        return jsonify({"error": "subreddits must be an array"}), 400
+
+    raw_names: list[str] = []
+    for entry in sub_entries:
+        if isinstance(entry, str):
+            raw_names.append(entry)
+        elif isinstance(entry, dict):
+            for k in ("name", "display_name", "subredditName"):
+                v = entry.get(k)
+                if isinstance(v, str):
+                    raw_names.append(v)
+                    break
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw in raw_names:
+        n = _normalize_name(raw)
+        if n and n not in seen:
+            seen.add(n)
+            normalized.append(n)
+
+    db = get_db()
+    now = int(time.time())
+
+    # Find or create the target list
+    existing = db.execute("SELECT id FROM lists WHERE name=?", (name,)).fetchone()
+    if existing is not None:
+        if mode != "merge":
+            return jsonify({
+                "error": f"a list named {name!r} already exists \u2014 pass mode:'merge' to add into it",
+                "existing_id": existing["id"],
+            }), 409
+        list_id = existing["id"]
+        created = False
+    else:
+        max_pos = db.execute("SELECT COALESCE(MAX(position), -1) AS m FROM lists").fetchone()["m"]
+        cur = db.execute(
+            "INSERT INTO lists(name, icon, position, created_at) VALUES(?,?,?,?)",
+            (name, icon, max_pos + 1, now),
+        )
+        list_id = cur.lastrowid
+        created = True
+
+    added, existing_subs = [], []
+    for n in normalized:
+        cur = db.execute(
+            "INSERT INTO subscribed_subreddits(list_id, name, added_at, active, weight) "
+            "VALUES(?, ?, ?, 1, 1.0) ON CONFLICT(list_id, name) DO NOTHING",
+            (list_id, n, now),
+        )
+        (added if cur.rowcount > 0 else existing_subs).append(n)
+
+    row = db.execute("SELECT * FROM lists WHERE id=?", (list_id,)).fetchone()
+    return jsonify({
+        "success": True,
+        "created": created,
+        "mode": mode,
+        "list": _list_row_to_dict(row, db),
+        "added": added,
+        "already_subscribed": existing_subs,
+        "added_count": len(added),
+        "skipped_count": len(existing_subs),
+    })
 
 
 @bp.patch("/lists/<int:list_id>")
@@ -263,6 +374,48 @@ def bulk_add_subs(list_id: int):
         "skipped": skipped,
         "added_count": len(added),
         "skipped_count": len(skipped),
+    })
+
+
+@bp.post("/lists/<int:list_id>/subreddits/import")
+def import_subs_into_list(list_id: int):
+    """Rich-format import targeting a specific list. Accepts plaintext,
+    Reddit subscription CSV, Apollo backup JSON, Sync backup JSON, and
+    raw Reddit API JSON \u2014 same parser as POST /api/subreddits/import
+    but lands the subs in `list_id` instead of the default list."""
+    db = get_db()
+    if not db.execute("SELECT 1 FROM lists WHERE id=?", (list_id,)).fetchone():
+        return jsonify({"error": "list not found"}), 404
+
+    if "file" in request.files:
+        names = _parse_import_payload(request.files["file"].read())
+    else:
+        ctype = (request.content_type or "").lower()
+        if "json" in ctype:
+            names = _parse_import_payload(request.get_json(silent=True) or {})
+        else:
+            names = _parse_import_payload(request.get_data(as_text=True))
+
+    if not names:
+        return jsonify({"error": "no valid subreddit names found"}), 400
+
+    now = int(time.time())
+    added, existing = [], []
+    for n in names:
+        cur = db.execute(
+            "INSERT INTO subscribed_subreddits(list_id, name, added_at, active, weight) "
+            "VALUES(?, ?, ?, 1, 1.0) ON CONFLICT(list_id, name) DO NOTHING",
+            (list_id, n, now),
+        )
+        (added if cur.rowcount > 0 else existing).append(n)
+
+    return jsonify({
+        "success": True,
+        "list_id": list_id,
+        "added": added,
+        "already_subscribed": existing,
+        "added_count": len(added),
+        "skipped_count": len(existing),
     })
 
 

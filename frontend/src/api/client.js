@@ -1,6 +1,25 @@
 // Tiny fetch wrapper; all endpoints return JSON or throw.
 const base = '';
 
+// Helper for the /import endpoints which accept either plaintext or JSON body
+// and have to tolerate non-JSON error bodies gracefully.
+async function rawImport(path, body, contentType) {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': contentType, Accept: 'application/json' },
+    body: typeof body === 'string' ? body : JSON.stringify(body),
+  });
+  const ct = res.headers.get('content-type') || '';
+  const data = ct.includes('application/json') ? await res.json() : { raw: await res.text() };
+  if (!res.ok) {
+    const err = new Error(`${res.status} ${res.statusText}: ${JSON.stringify(data)}`);
+    err.status = res.status;
+    err.payload = data;
+    throw err;
+  }
+  return data;
+}
+
 async function req(path, { method = 'GET', body, signal } = {}) {
   const opts = { method, signal, headers: { Accept: 'application/json' } };
   if (body !== undefined) {
@@ -35,21 +54,12 @@ export const api = {
   setSubWeight: (name, weight) => req(`/api/subreddits/${encodeURIComponent(name)}/weight`, { method: 'PATCH', body: { weight } }),
   updateSub: (name, patch) => req(`/api/subreddits/${encodeURIComponent(name)}`, { method: 'PATCH', body: patch }),
   importSubs: async (body, contentType = 'application/json') => {
-    const res = await fetch('/api/subreddits/import', {
-      method: 'POST',
-      headers: { 'Content-Type': contentType, Accept: 'application/json' },
-      body: typeof body === 'string' ? body : JSON.stringify(body),
-    });
-    const ct = res.headers.get('content-type') || '';
-    const data = ct.includes('application/json') ? await res.json() : { raw: await res.text() };
-    if (!res.ok) {
-      const err = new Error(`${res.status} ${res.statusText}: ${JSON.stringify(data)}`);
-      err.status = res.status;
-      err.payload = data;
-      throw err;
-    }
-    return data;
+    return rawImport('/api/subreddits/import', body, contentType);
   },
+  importSubsIntoList: async (listId, body, contentType = 'application/json') => {
+    return rawImport(`/api/lists/${listId}/subreddits/import`, body, contentType);
+  },
+  importList: (payload) => req('/api/lists/import', { method: 'POST', body: payload }),
 
   // Settings
   settings: () => req('/api/settings'),

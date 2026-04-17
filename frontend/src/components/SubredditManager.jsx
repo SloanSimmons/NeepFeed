@@ -1,10 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api/client.js';
 
-const IMPORT_HINT = [
+const IMPORT_HINT_SUBS = [
   "Paste a list of subreddits: one per line, or comma/space-separated.",
   "Accepts 'r/python', 'python', or 'https://reddit.com/r/python/'.",
   "Also accepts JSON from Reddit data export, Apollo, or Sync backups.",
+].join('\n');
+
+const IMPORT_HINT_LIST = [
+  "Paste or upload a single-list JSON file to create a new list.",
+  'Shape: {"name": "Tech", "icon": "💻", "subreddits": ["rust", "python", ...]}',
+  'Pass {"mode": "merge"} to add into an existing list of the same name instead of erroring.',
 ].join('\n');
 
 export default function SubredditManager() {
@@ -12,6 +18,7 @@ export default function SubredditManager() {
   const [filter, setFilter] = useState('');
   const [adding, setAdding] = useState('');
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkMode, setBulkMode] = useState('subs'); // 'subs' | 'list'
   const [bulkText, setBulkText] = useState('');
   const [bulkResult, setBulkResult] = useState(null);
   const [error, setError] = useState(null);
@@ -67,27 +74,48 @@ export default function SubredditManager() {
     } catch (e) { setError(e.message); refresh(); }
   };
 
-  const onBulkImport = async () => {
-    try {
-      const result = await api.importSubs(bulkText, 'text/plain');
-      setBulkResult(result);
-      setBulkText('');
-      await refresh();
-    } catch (e) { setError(e.message); }
+  const describeResult = (r) => {
+    if (!r) return '';
+    if (r.list) {
+      const verb = r.created ? 'Created list' : 'Merged into list';
+      return `${verb} "${r.list.name}" · added ${r.added_count}, skipped ${r.skipped_count}`;
+    }
+    return `Added ${r.added_count}, skipped ${r.skipped_count}`;
   };
+
+  const runImport = async (text, contentType) => {
+    try {
+      let result;
+      if (bulkMode === 'list') {
+        // Single-list JSON blob -> /api/lists/import
+        const payload = typeof text === 'string' ? JSON.parse(text) : text;
+        result = await api.importList(payload);
+      } else {
+        // Rich-format subs -> /api/subreddits/import (lands in default list)
+        result = await api.importSubs(text, contentType);
+      }
+      setBulkResult(result);
+      if (bulkMode === 'subs') setBulkText('');
+      await refresh();
+      setError(null);
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const onBulkImport = () => runImport(bulkText, 'text/plain');
 
   const onFileImport = async (e) => {
     const f = e.target.files?.[0];
     if (!f) return;
     const text = await f.text();
-    // Try JSON first, fall back to text
+    // In list-mode the body must be JSON. In subs-mode, try JSON first,
+    // fall back to plain text so Reddit/Apollo/Sync exports all work.
     let contentType = 'application/json';
-    try { JSON.parse(text); } catch { contentType = 'text/plain'; }
-    try {
-      const result = await api.importSubs(text, contentType);
-      setBulkResult(result);
-      await refresh();
-    } catch (e) { setError(e.message); }
+    if (bulkMode === 'subs') {
+      try { JSON.parse(text); } catch { contentType = 'text/plain'; }
+    }
+    await runImport(text, contentType);
     e.target.value = '';
   };
 
@@ -119,17 +147,41 @@ export default function SubredditManager() {
       {/* Bulk import panel */}
       {bulkOpen && (
         <div className="bg-bg border border-white/5 rounded-lg p-3 mb-3">
-          <label className="block text-xs text-fg-muted mb-1 whitespace-pre-line">{IMPORT_HINT}</label>
+          {/* Mode selector */}
+          <div className="inline-flex p-0.5 bg-bg-card border border-white/5 rounded-lg mb-2 text-xs">
+            <button
+              onClick={() => { setBulkMode('subs'); setBulkResult(null); }}
+              className={`px-3 py-1 rounded ${bulkMode === 'subs' ? 'bg-brand text-black font-semibold' : 'text-fg-muted hover:text-fg'}`}
+            >
+              Add subs to My Feed
+            </button>
+            <button
+              onClick={() => { setBulkMode('list'); setBulkResult(null); }}
+              className={`px-3 py-1 rounded ${bulkMode === 'list' ? 'bg-brand text-black font-semibold' : 'text-fg-muted hover:text-fg'}`}
+            >
+              Import as new list
+            </button>
+          </div>
+
+          <label className="block text-xs text-fg-muted mb-1 whitespace-pre-line">
+            {bulkMode === 'list' ? IMPORT_HINT_LIST : IMPORT_HINT_SUBS}
+          </label>
           <textarea
             value={bulkText}
             onChange={(e) => setBulkText(e.target.value)}
-            rows={5}
+            rows={bulkMode === 'list' ? 8 : 5}
             className="w-full bg-bg-card border border-white/5 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-brand/40"
-            placeholder="python, golang, rust&#10;selfhosted&#10;r/homelab"
+            placeholder={bulkMode === 'list'
+              ? '{\n  "name": "Tech",\n  "icon": "💻",\n  "subreddits": ["rust", "python", "linux"]\n}'
+              : 'python, golang, rust\nselfhosted\nr/homelab'}
           />
-          <div className="flex items-center gap-2 mt-2">
-            <button onClick={onBulkImport} disabled={!bulkText.trim()} className="btn-primary text-sm disabled:opacity-40">
-              Import text
+          <div className="flex items-center gap-2 mt-2 flex-wrap">
+            <button
+              onClick={onBulkImport}
+              disabled={!bulkText.trim()}
+              className="btn-primary text-sm disabled:opacity-40"
+            >
+              {bulkMode === 'list' ? 'Create list' : 'Import text'}
             </button>
             <input
               ref={fileInputRef}
@@ -139,12 +191,10 @@ export default function SubredditManager() {
               className="hidden"
             />
             <button onClick={() => fileInputRef.current?.click()} className="btn text-sm">
-              Import file…
+              {bulkMode === 'list' ? 'Upload list JSON…' : 'Import file…'}
             </button>
             {bulkResult && (
-              <span className="text-xs text-fg-muted">
-                Added {bulkResult.added_count}, skipped {bulkResult.skipped_count}
-              </span>
+              <span className="text-xs text-fg-muted">{describeResult(bulkResult)}</span>
             )}
           </div>
         </div>
