@@ -13,7 +13,9 @@ from dotenv import load_dotenv
 from flask import Flask, jsonify, send_from_directory
 from flask_cors import CORS
 
+from collection import start_scheduler
 from db import close_db, init_schema
+from routes.collect import bp as collect_bp
 from routes.health import bp as health_bp
 
 load_dotenv()
@@ -43,6 +45,10 @@ def create_app() -> Flask:
 
     # API blueprints
     app.register_blueprint(health_bp, url_prefix="/api")
+    app.register_blueprint(collect_bp, url_prefix="/api")
+
+    # Start background collection scheduler
+    start_scheduler()
 
     # SPA fallback: any non-/api route returns index.html so React Router works
     @app.route("/", defaults={"path": ""})
