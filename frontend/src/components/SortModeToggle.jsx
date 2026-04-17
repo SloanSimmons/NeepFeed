@@ -1,16 +1,17 @@
 import { useState } from 'react';
 import { IconChevron } from './icons.jsx';
 
-const OPTIONS = [
-  { value: 'calculated', label: 'Calculated', hint: 'Formula-based ranking' },
-  { value: 'score',      label: 'Score',      hint: 'Raw upvotes' },
-  { value: 'recency',    label: 'Recency',    hint: 'Newest first' },
-  { value: 'velocity',   label: 'Velocity',   hint: 'Trending (score growth)' },
+// Internal values stay as calculated|score|recency|velocity so the backend
+// API contract is unchanged; only the user-facing labels were renamed.
+export const SORT_OPTIONS = [
+  { value: 'calculated', label: 'Recommended', hint: 'Formula-based ranking (default)' },
+  { value: 'score',      label: 'Hot',         hint: 'Raw upvotes' },
+  { value: 'recency',    label: 'New',         hint: 'Newest first' },
+  { value: 'velocity',   label: 'Trending',    hint: 'Score growth rate' },
 ];
 
 export default function SortModeToggle({ value, onChange }) {
   const [open, setOpen] = useState(false);
-  const current = OPTIONS.find((o) => o.value === value) || OPTIONS[0];
 
   return (
     <div className="relative">
@@ -20,8 +21,9 @@ export default function SortModeToggle({ value, onChange }) {
         className="btn text-sm"
         aria-haspopup="listbox"
         aria-expanded={open}
+        title="Sort by"
       >
-        Sort: <span className="font-semibold">{current.label}</span>
+        Sort by
         <IconChevron className="w-3 h-3" />
       </button>
       {open && (
@@ -29,7 +31,7 @@ export default function SortModeToggle({ value, onChange }) {
           role="listbox"
           className="absolute right-0 mt-1 w-56 bg-bg-elev border border-white/10 rounded-lg shadow-xl z-30 overflow-hidden"
         >
-          {OPTIONS.map((o) => (
+          {SORT_OPTIONS.map((o) => (
             <button
               key={o.value}
               onMouseDown={(e) => e.preventDefault()}
@@ -37,6 +39,8 @@ export default function SortModeToggle({ value, onChange }) {
               className={`block w-full text-left px-3 py-2 hover:bg-white/5 ${
                 o.value === value ? 'bg-white/5 text-brand' : ''
               }`}
+              role="option"
+              aria-selected={o.value === value}
             >
               <div className="text-sm font-medium">{o.label}</div>
               <div className="text-xs text-fg-muted">{o.hint}</div>

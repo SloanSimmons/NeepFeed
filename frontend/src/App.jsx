@@ -6,6 +6,7 @@ import FreshBatchBanner from './components/FreshBatchBanner.jsx';
 import EmptyState from './components/EmptyState.jsx';
 import SettingsModal from './components/SettingsModal.jsx';
 import SkinPreviewBar from './components/SkinPreviewBar.jsx';
+import MobileSidebar from './components/MobileSidebar.jsx';
 import { useFeed } from './hooks/useFeed.js';
 import { useSettings } from './hooks/useSettings.js';
 import { useStats } from './hooks/useStats.js';
@@ -25,6 +26,7 @@ export default function App() {
   const [freshBatch, setFreshBatch] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const searchInputRef = useRef(null);
 
   // Sync sort from settings on first load
@@ -149,6 +151,22 @@ export default function App() {
         activeListId={listsHook.activeListId}
         onListChange={listsHook.setActiveListId}
         onCreateList={() => { setSettingsTab('lists'); setSettingsOpen(true); }}
+        onOpenSidebar={() => setSidebarOpen(true)}
+      />
+
+      <MobileSidebar
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        mode={mode}
+        onModeChange={setMode}
+        bookmarkCount={bookmarkCount}
+        lists={listsHook.lists}
+        activeListId={listsHook.activeListId}
+        onListChange={listsHook.setActiveListId}
+        onCreateList={() => { setSettingsTab('lists'); setSettingsOpen(true); }}
+        sort={sort}
+        onSortChange={onSortChange}
+        onOpenSettings={() => { setSettingsTab(null); setSettingsOpen(true); }}
       />
 
       <FreshBatchBanner count={freshBatch} onClick={onFreshBatchClick} />

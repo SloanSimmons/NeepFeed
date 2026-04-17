@@ -13,10 +13,6 @@ import { ALL_LISTS } from '../hooks/useLists.js';
 export default function ListSelector({ lists, activeId, onSelect, onCreate }) {
   const [open, setOpen] = useState(false);
 
-  const activeLabel = activeId === ALL_LISTS
-    ? { icon: '🗂️', name: 'All Lists' }
-    : lists.find((l) => l.id === activeId) || { icon: '🗂️', name: 'All Lists' };
-
   const close = () => setTimeout(() => setOpen(false), 100);
 
   return (
@@ -27,10 +23,9 @@ export default function ListSelector({ lists, activeId, onSelect, onCreate }) {
         className="btn text-sm"
         aria-haspopup="listbox"
         aria-expanded={open}
-        title="Switch list"
+        title="Switch custom feed"
       >
-        <span>{activeLabel.icon}</span>
-        <span className="font-semibold max-w-[140px] truncate">{activeLabel.name}</span>
+        Custom Feeds
         <IconChevron className="w-3 h-3" />
       </button>
       {open && (

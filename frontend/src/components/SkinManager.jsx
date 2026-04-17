@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { BUILTIN_SKINS } from '../skins/builtin.js';
+import SkinTemplateModal, { shouldShowSkinTemplateModal } from './SkinTemplateModal.jsx';
 
 /**
  * Skin library list + import/share controls. The parent App passes in
@@ -9,6 +10,7 @@ export default function SkinManager({ skin }) {
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState('');
   const [importError, setImportError] = useState(null);
+  const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const fileRef = useRef(null);
 
   const activeName = skin.preview?.name || skin.active;
@@ -72,7 +74,7 @@ export default function SkinManager({ skin }) {
     e.target.value = '';
   };
 
-  const onDownloadTemplate = async () => {
+  const performDownload = async () => {
     try {
       const r = await fetch('/skin-template.md');
       const text = await r.text();
@@ -85,6 +87,14 @@ export default function SkinManager({ skin }) {
       URL.revokeObjectURL(url);
     } catch (e) {
       alert('Template not available yet');
+    }
+  };
+
+  const onDownloadTemplate = async () => {
+    if (shouldShowSkinTemplateModal()) {
+      setTemplateModalOpen(true);
+    } else {
+      await performDownload();
     }
   };
 
@@ -146,6 +156,12 @@ export default function SkinManager({ skin }) {
           Create with AI (template)
         </button>
       </div>
+
+      <SkinTemplateModal
+        open={templateModalOpen}
+        onDownload={async () => { setTemplateModalOpen(false); await performDownload(); }}
+        onClose={() => setTemplateModalOpen(false)}
+      />
 
       {importOpen && (
         <div className="mt-3 bg-bg border border-white/5 rounded-lg p-3">
