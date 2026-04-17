@@ -17,6 +17,7 @@ export function useFeed({
   subreddit,
   search,
   source = 'feed',          // 'feed' | 'bookmarks'
+  list,                     // undefined => all lists; number | 'all' | '1,3'
   prefetch = true,
 } = {}) {
   const [posts, setPosts] = useState([]);
@@ -35,7 +36,7 @@ export function useFeed({
   const genRef = useRef(0);
   const limit = 25;
 
-  const deps = JSON.stringify({ sort, hideNsfw, hideSeen, subreddit, search, source });
+  const deps = JSON.stringify({ sort, hideNsfw, hideSeen, subreddit, search, source, list });
 
   const fetchPage = useCallback(async (nextOffset) => {
     setLoading(true);
@@ -54,6 +55,7 @@ export function useFeed({
         if (hideSeen) params.hide_seen = 'true';
         if (subreddit) params.subreddit = subreddit;
         if (search) params.q = search;
+        if (list !== undefined && list !== null) params.list = String(list);
         data = await api.feed(params, { signal: ctrl.signal });
       }
       // Stale-response guard: return a sentinel so callers skip state writes.

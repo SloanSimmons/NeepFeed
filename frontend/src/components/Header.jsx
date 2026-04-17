@@ -1,5 +1,6 @@
 import SortModeToggle from './SortModeToggle.jsx';
 import ModeToggle from './ModeToggle.jsx';
+import ListSelector from './ListSelector.jsx';
 import { IconSearch, IconSettings } from './icons.jsx';
 
 export default function Header({
@@ -9,6 +10,7 @@ export default function Header({
   search, onSearchChange,
   searchInputRef,
   mode, onModeChange, bookmarkCount,
+  lists, activeListId, onListChange, onCreateList,
 }) {
   return (
     <header className="sticky top-0 z-20 backdrop-blur-md bg-bg/75 border-b border-white/5">
@@ -48,6 +50,14 @@ export default function Header({
         <div className="flex items-center gap-2">
           {mode && onModeChange && (
             <ModeToggle value={mode} onChange={onModeChange} bookmarkCount={bookmarkCount} />
+          )}
+          {mode !== 'bookmarks' && lists && onListChange && (
+            <ListSelector
+              lists={lists}
+              activeId={activeListId}
+              onSelect={onListChange}
+              onCreate={onCreateList}
+            />
           )}
           {mode !== 'bookmarks' && (
             <SortModeToggle value={sort} onChange={onSortChange} />

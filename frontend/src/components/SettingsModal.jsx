@@ -3,6 +3,7 @@ import { api } from '../api/client.js';
 import SubredditManager from './SubredditManager.jsx';
 import BlocklistManager from './BlocklistManager.jsx';
 import SkinManager from './SkinManager.jsx';
+import ListsManager from './ListsManager.jsx';
 
 /** Setting row helpers */
 function Row({ label, hint, children }) {
@@ -65,9 +66,14 @@ function FreshnessSlider({ value, onChange }) {
   );
 }
 
-export default function SettingsModal({ open, onClose, settings, onUpdate, skin }) {
-  const [tab, setTab] = useState('subs');
+export default function SettingsModal({ open, onClose, settings, onUpdate, skin, listsHook, initialTab }) {
+  const [tab, setTab] = useState(initialTab || 'subs');
   const modalRef = useRef(null);
+
+  // When re-opened with a fresh initialTab, honor it
+  useEffect(() => {
+    if (open && initialTab) setTab(initialTab);
+  }, [open, initialTab]);
 
   useEffect(() => {
     if (!open) return;
@@ -123,6 +129,7 @@ export default function SettingsModal({ open, onClose, settings, onUpdate, skin 
 
   const TABS = [
     { id: 'subs',     label: 'Subreddits' },
+    { id: 'lists',    label: 'Lists' },
     { id: 'scoring',  label: 'Scoring' },
     { id: 'display',  label: 'Display' },
     { id: 'media',    label: 'Media' },
@@ -165,7 +172,8 @@ export default function SettingsModal({ open, onClose, settings, onUpdate, skin 
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-4">
-          {tab === 'subs' && <SubredditManager />}
+          {tab === 'subs' && <SubredditManager listsHook={listsHook} />}
+          {tab === 'lists' && listsHook && <ListsManager listsHook={listsHook} />}
 
           {tab === 'scoring' && (
             <div>

@@ -61,6 +61,18 @@ export const api = {
   },
   importList: (payload) => req('/api/lists/import', { method: 'POST', body: payload }),
 
+  // Lists
+  lists: () => req('/api/lists'),
+  createList: (body) => req('/api/lists', { method: 'POST', body }),
+  updateList: (id, body) => req(`/api/lists/${id}`, { method: 'PATCH', body }),
+  deleteList: (id) => req(`/api/lists/${id}`, { method: 'DELETE' }),
+  listSubreddits: (id) => req(`/api/lists/${id}/subreddits`),
+  addSubToList: (id, name) => req(`/api/lists/${id}/subreddits`, { method: 'POST', body: { action: 'add', name } }),
+  removeSubFromList: (id, name) => req(`/api/lists/${id}/subreddits`, { method: 'POST', body: { action: 'remove', name } }),
+  toggleSubInList: (id, name) => req(`/api/lists/${id}/subreddits`, { method: 'POST', body: { action: 'toggle', name } }),
+  setSubWeightInList: (id, name, weight) => req(`/api/lists/${id}/subreddits/${encodeURIComponent(name)}/weight`, { method: 'PATCH', body: { weight } }),
+  listRecommendations: (id) => req(`/api/lists/${id}/recommendations`),
+
   // Settings
   settings: () => req('/api/settings'),
   updateSettings: (patch) => req('/api/settings', { method: 'POST', body: patch }),

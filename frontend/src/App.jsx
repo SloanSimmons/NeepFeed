@@ -12,16 +12,19 @@ import { useStats } from './hooks/useStats.js';
 import { useSeenTracking } from './hooks/useSeenTracking.js';
 import { useKeyboardNav } from './hooks/useKeyboardNav.js';
 import { useSkin } from './hooks/useSkin.js';
+import { useLists, ALL_LISTS } from './hooks/useLists.js';
 
 export default function App() {
   const { settings, update: updateSettings } = useSettings();
   const skin = useSkin();
+  const listsHook = useLists();
   const [mode, setMode] = useState('feed');              // 'feed' | 'bookmarks'
   const [sort, setSort] = useState('calculated');
   const [search, setSearch] = useState('');
   const [searchDebounced, setSearchDebounced] = useState('');
   const [freshBatch, setFreshBatch] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState(null);
   const searchInputRef = useRef(null);
 
   // Sync sort from settings on first load
@@ -38,12 +41,17 @@ export default function App() {
     return () => clearTimeout(t);
   }, [search]);
 
+  const listParam = listsHook.activeListId === ALL_LISTS
+    ? undefined
+    : listsHook.activeListId;
+
   const {
     posts, loading, hasMore, loadMore, setPosts, error, retry,
   } = useFeed({
     source: mode,                              // 'feed' or 'bookmarks'
     sort,
     search: searchDebounced || undefined,
+    list: listParam,
     hideNsfw: settings?.hide_nsfw,
     hideSeen: settings?.hide_seen,
     prefetch: settings?.prefetch_enabled !== false,
@@ -130,13 +138,17 @@ export default function App() {
         sort={sort}
         onSortChange={onSortChange}
         stats={stats}
-        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenSettings={() => { setSettingsTab(null); setSettingsOpen(true); }}
         search={search}
         onSearchChange={setSearch}
         searchInputRef={searchInputRef}
         mode={mode}
         onModeChange={setMode}
         bookmarkCount={bookmarkCount}
+        lists={listsHook.lists}
+        activeListId={listsHook.activeListId}
+        onListChange={listsHook.setActiveListId}
+        onCreateList={() => { setSettingsTab('lists'); setSettingsOpen(true); }}
       />
 
       <FreshBatchBanner count={freshBatch} onClick={onFreshBatchClick} />
@@ -147,6 +159,8 @@ export default function App() {
         settings={settings}
         onUpdate={updateSettings}
         skin={skin}
+        listsHook={listsHook}
+        initialTab={settingsTab}
       />
 
       {skin.isPreviewing && (

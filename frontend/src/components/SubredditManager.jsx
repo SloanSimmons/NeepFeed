@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api/client.js';
 
 const IMPORT_HINT_SUBS = [
@@ -13,7 +13,30 @@ const IMPORT_HINT_LIST = [
   'Pass {"mode": "merge"} to add into an existing list of the same name instead of erroring.',
 ].join('\n');
 
-export default function SubredditManager() {
+/**
+ * SubredditManager — per-list subreddit management.
+ *
+ * Takes `listsHook` (from useLists) so the list picker here stays in sync
+ * with the header selector and the Lists tab. Operations target the list
+ * currently selected in the listsHook.
+ */
+export default function SubredditManager({ listsHook }) {
+  const { lists, activeListId, setActiveListId } = listsHook;
+
+  // Which list are we editing? If the current activeListId is 'all' we still
+  // need a concrete target — default to My Feed (id=1).
+  const [editingListId, setEditingListId] = useState(() =>
+    typeof activeListId === 'number' ? activeListId : 1
+  );
+
+  // When the parent's active list changes (e.g. from the header) and it's a
+  // real list, follow it. Don't flip away when the parent is 'all'.
+  useEffect(() => {
+    if (typeof activeListId === 'number') setEditingListId(activeListId);
+  }, [activeListId]);
+
+  const editingList = lists.find((l) => l.id === editingListId);
+
   const [subs, setSubs] = useState([]);
   const [filter, setFilter] = useState('');
   const [adding, setAdding] = useState('');
@@ -24,15 +47,16 @@ export default function SubredditManager() {
   const [error, setError] = useState(null);
   const fileInputRef = useRef(null);
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
+    if (!editingListId) return;
     try {
-      const r = await api.subreddits();
+      const r = await api.listSubreddits(editingListId);
       setSubs(r.subreddits || []);
       setError(null);
     } catch (e) { setError(e.message); }
-  };
+  }, [editingListId]);
 
-  useEffect(() => { refresh(); }, []);
+  useEffect(() => { refresh(); }, [refresh]);
 
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
@@ -45,23 +69,23 @@ export default function SubredditManager() {
     const name = adding.trim();
     if (!name) return;
     try {
-      await api.addSub(name);
+      await api.addSubToList(editingListId, name);
       setAdding('');
       await refresh();
     } catch (err) { setError(err.message); }
   };
 
   const onRemove = async (name) => {
-    if (!confirm(`Unsubscribe from r/${name}?`)) return;
+    if (!confirm(`Remove r/${name} from ${editingList?.name || 'this list'}?`)) return;
     try {
-      await api.removeSub(name);
+      await api.removeSubFromList(editingListId, name);
       await refresh();
     } catch (err) { setError(err.message); }
   };
 
   const onToggle = async (name) => {
     try {
-      await api.toggleSub(name);
+      await api.toggleSubInList(editingListId, name);
       await refresh();
     } catch (err) { setError(err.message); }
   };
@@ -70,7 +94,7 @@ export default function SubredditManager() {
     // Optimistic
     setSubs((prev) => prev.map((s) => (s.name === name ? { ...s, weight } : s)));
     try {
-      await api.setSubWeight(name, weight);
+      await api.setSubWeightInList(editingListId, name, weight);
     } catch (e) { setError(e.message); refresh(); }
   };
 
@@ -87,12 +111,17 @@ export default function SubredditManager() {
     try {
       let result;
       if (bulkMode === 'list') {
-        // Single-list JSON blob -> /api/lists/import
+        // Single-list JSON blob -> /api/lists/import (creates a new list)
         const payload = typeof text === 'string' ? JSON.parse(text) : text;
         result = await api.importList(payload);
+        // Auto-switch the header + editing to the new list if one was created
+        if (result.list?.id && result.created) {
+          setEditingListId(result.list.id);
+          setActiveListId?.(result.list.id);
+        }
       } else {
-        // Rich-format subs -> /api/subreddits/import (lands in default list)
-        result = await api.importSubs(text, contentType);
+        // Rich-format subs -> /api/lists/<id>/subreddits/import (into current list)
+        result = await api.importSubsIntoList(editingListId, text, contentType);
       }
       setBulkResult(result);
       if (bulkMode === 'subs') setBulkText('');
@@ -109,8 +138,6 @@ export default function SubredditManager() {
     const f = e.target.files?.[0];
     if (!f) return;
     const text = await f.text();
-    // In list-mode the body must be JSON. In subs-mode, try JSON first,
-    // fall back to plain text so Reddit/Apollo/Sync exports all work.
     let contentType = 'application/json';
     if (bulkMode === 'subs') {
       try { JSON.parse(text); } catch { contentType = 'text/plain'; }
@@ -125,13 +152,34 @@ export default function SubredditManager() {
         <div className="text-red-400 text-xs mb-2 font-mono whitespace-pre-wrap">{error}</div>
       )}
 
+      {/* List selector */}
+      {lists.length > 1 && (
+        <div className="flex items-center gap-2 mb-3 text-sm">
+          <span className="text-xs text-fg-muted">Managing:</span>
+          <select
+            value={editingListId}
+            onChange={(e) => setEditingListId(Number(e.target.value))}
+            className="bg-bg border border-white/10 rounded-lg px-2 py-1 text-sm focus:outline-none focus:border-brand/40"
+          >
+            {lists.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.icon} {l.name} ({l.active_count ?? l.subreddit_count ?? 0})
+              </option>
+            ))}
+          </select>
+          <span className="text-xs text-fg-dim">
+            {editingList ? `${editingList.active_count ?? 0} of ${editingList.subreddit_count ?? 0} active` : ''}
+          </span>
+        </div>
+      )}
+
       {/* Add single */}
       <form onSubmit={onAdd} className="flex gap-2 mb-3">
         <input
           type="text"
           value={adding}
           onChange={(e) => setAdding(e.target.value)}
-          placeholder="Add subreddit (e.g. python, r/rust)…"
+          placeholder={`Add subreddit to ${editingList?.name || 'list'}…`}
           className="flex-1 bg-bg border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand/40"
         />
         <button type="submit" className="btn-primary text-sm">Add</button>
@@ -147,13 +195,12 @@ export default function SubredditManager() {
       {/* Bulk import panel */}
       {bulkOpen && (
         <div className="bg-bg border border-white/5 rounded-lg p-3 mb-3">
-          {/* Mode selector */}
           <div className="inline-flex p-0.5 bg-bg-card border border-white/5 rounded-lg mb-2 text-xs">
             <button
               onClick={() => { setBulkMode('subs'); setBulkResult(null); }}
               className={`px-3 py-1 rounded ${bulkMode === 'subs' ? 'bg-brand text-black font-semibold' : 'text-fg-muted hover:text-fg'}`}
             >
-              Add subs to My Feed
+              Add subs to {editingList?.name || 'this list'}
             </button>
             <button
               onClick={() => { setBulkMode('list'); setBulkResult(null); }}
@@ -230,19 +277,19 @@ export default function SubredditManager() {
             <button
               onClick={() => onRemove(s.name)}
               className="text-fg-dim hover:text-red-400 text-sm px-2"
-              title="Remove"
+              title="Remove from this list"
             >✕</button>
           </div>
         ))}
         {filtered.length === 0 && (
           <div className="text-fg-dim text-sm p-4 text-center">
-            {subs.length === 0 ? 'No subreddits yet.' : 'No matches.'}
+            {subs.length === 0 ? `No subreddits in ${editingList?.name || 'this list'} yet.` : 'No matches.'}
           </div>
         )}
       </div>
 
       <div className="mt-2 text-xs text-fg-dim">
-        {subs.filter((s) => s.active).length} active / {subs.length} total
+        {subs.filter((s) => s.active).length} active / {subs.length} total in {editingList?.name || 'this list'}
       </div>
     </div>
   );
