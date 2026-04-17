@@ -1,0 +1,28 @@
+services:
+  neepfeed:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: neepfeed
+    ports:
+      # Host port TBD — pick an unused one on gweep before deploy. Spec said 5002.
+      - "5002:5000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      REDDIT_CLIENT_ID: ${REDDIT_CLIENT_ID:-}
+      REDDIT_CLIENT_SECRET: ${REDDIT_CLIENT_SECRET:-}
+      REDDIT_USERNAME: ${REDDIT_USERNAME:-}
+      REDDIT_PASSWORD: ${REDDIT_PASSWORD:-}
+      REDDIT_USER_AGENT: ${REDDIT_USER_AGENT:-NeepFeed/1.0}
+      FLASK_ENV: production
+      DATABASE_PATH: /app/data/neepfeed.db
+      COLLECTION_INTERVAL_MINUTES: ${COLLECTION_INTERVAL_MINUTES:-25}
+      REDDIT_CLIENT_MODE: ${REDDIT_CLIENT_MODE:-}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; urllib.request.urlopen('http://localhost:5000/api/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

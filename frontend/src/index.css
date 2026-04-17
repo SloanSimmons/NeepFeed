@@ -1,0 +1,26 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #root { height: 100%; }
+  body {
+    background: #0b0d10;
+    color: #e8ebef;
+  }
+  /* Smooth scroll for keyboard-nav (j/k) in M4 */
+  html { scroll-behavior: smooth; }
+}
+
+@layer components {
+  .card {
+    @apply bg-bg-card rounded-card border border-white/5 shadow-lg shadow-black/30;
+  }
+  .btn {
+    @apply inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium
+           bg-bg-elev hover:bg-white/5 border border-white/5 transition-colors;
+  }
+  .btn-primary {
+    @apply btn bg-brand hover:bg-brand-hover text-black border-transparent;
+  }
+}

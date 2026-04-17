@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+.env
+
+# Node / Vite
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Data
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Editors
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+*.log
+dist/
+build/
