@@ -72,6 +72,32 @@ export function useLists() {
     return r;
   }, [refresh]);
 
+  // Optimistic bulk reorder. orderedIds is the full list of ids in the
+  // desired visual order. Rolls back on error.
+  const reorder = useCallback(async (orderedIds) => {
+    const prev = lists;
+    // Optimistic: rebuild the array by the requested order
+    const byId = new Map(prev.map((l) => [l.id, l]));
+    const optimistic = orderedIds
+      .map((id, idx) => { const l = byId.get(id); return l ? { ...l, position: idx } : null; })
+      .filter(Boolean);
+    // Append any ids the caller didn't mention, preserving their relative order
+    const mentioned = new Set(orderedIds);
+    const tail = prev
+      .filter((l) => !mentioned.has(l.id))
+      .map((l, i) => ({ ...l, position: optimistic.length + i }));
+    setLists([...optimistic, ...tail]);
+    try {
+      const r = await api.reorderLists(orderedIds);
+      if (r?.lists) setLists(r.lists);
+      return r;
+    } catch (e) {
+      setLists(prev);            // rollback
+      setError(e);
+      throw e;
+    }
+  }, [lists]);
+
   const remove = useCallback(async (id) => {
     const r = await api.deleteList(id);
     await refresh();
@@ -93,6 +119,7 @@ export function useLists() {
     create,
     update,
     remove,
+    reorder,
     loading,
     error,
   };

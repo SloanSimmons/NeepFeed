@@ -72,6 +72,7 @@ export const api = {
   toggleSubInList: (id, name) => req(`/api/lists/${id}/subreddits`, { method: 'POST', body: { action: 'toggle', name } }),
   setSubWeightInList: (id, name, weight) => req(`/api/lists/${id}/subreddits/${encodeURIComponent(name)}/weight`, { method: 'PATCH', body: { weight } }),
   listRecommendations: (id) => req(`/api/lists/${id}/recommendations`),
+  reorderLists: (orderedIds) => req('/api/lists/reorder', { method: 'POST', body: { order: orderedIds } }),
 
   // Settings
   settings: () => req('/api/settings'),

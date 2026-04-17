@@ -218,6 +218,42 @@ def import_list():
     })
 
 
+@bp.post("/lists/reorder")
+def reorder_lists():
+    """Atomic bulk reorder. Body: {"order": [3, 1, 2]} rewrites position to
+    the index of each id in the array (0-based). Ids not present are pushed
+    to the end in their existing order, so a partial reorder doesn't drop
+    lists.
+
+    Returns the fresh list collection so the client can commit optimistic
+    state against the authoritative order.
+    """
+    body = request.get_json(silent=True) or {}
+    order = body.get("order")
+    if not isinstance(order, list) or not all(isinstance(x, int) for x in order):
+        return jsonify({"error": "order must be an array of list ids"}), 400
+
+    db = get_db()
+    all_ids = [r["id"] for r in db.execute("SELECT id FROM lists ORDER BY position, id").fetchall()]
+    # Validate all requested ids exist
+    invalid = [i for i in order if i not in all_ids]
+    if invalid:
+        return jsonify({"error": "unknown list ids", "invalid": invalid}), 400
+
+    # Final order: requested ids first, then any unlisted ids in their
+    # existing relative order (defensive against partial reorders).
+    seen = set(order)
+    final = list(order) + [i for i in all_ids if i not in seen]
+    for idx, lid in enumerate(final):
+        db.execute("UPDATE lists SET position=? WHERE id=?", (idx, lid))
+
+    rows = db.execute("SELECT * FROM lists ORDER BY position, id").fetchall()
+    return jsonify({
+        "success": True,
+        "lists": [_list_row_to_dict(r, db) for r in rows],
+    })
+
+
 @bp.patch("/lists/<int:list_id>")
 def update_list(list_id: int):
     body = request.get_json(silent=True) or {}
