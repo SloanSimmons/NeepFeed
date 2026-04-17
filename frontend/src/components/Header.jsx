@@ -40,7 +40,10 @@ export default function Header({
   return (
     <header className="sticky top-0 z-20 backdrop-blur-md bg-bg/75 border-b border-white/5">
       {/* ================== DESKTOP ROW (md and up) ================== */}
-      <div className="hidden md:flex items-center gap-3 px-4 lg:px-6 py-3">
+      {/* Layout: left cluster is flush-left, right cluster is flush-right,
+          Feed/Bookmarks is absolute-positioned over viewport center so it
+          aligns with the feed column's center (which is mx-auto max-w-3xl). */}
+      <div className="hidden md:flex relative items-center gap-3 px-4 lg:px-6 py-3">
         {/* Left cluster: logo + wide search */}
         <div className="flex items-center gap-3 flex-shrink-0">
           <div className="flex items-center gap-2">
@@ -58,7 +61,7 @@ export default function Header({
               value={search || ''}
               onChange={(e) => onSearchChange?.(e.target.value)}
               placeholder="Search stored posts…   (press / )"
-              className="w-[22rem] lg:w-[28rem] bg-bg-elev border border-white/5 rounded-lg pl-9 pr-8 py-1.5 text-sm
+              className="w-[20rem] lg:w-[24rem] bg-bg-elev border border-white/5 rounded-lg pl-9 pr-8 py-1.5 text-sm
                          placeholder:text-fg-dim focus:outline-none focus:border-brand/40"
             />
             {search && (
@@ -73,16 +76,18 @@ export default function Header({
           </label>
         </div>
 
-        {/* Spacer pushes right cluster to the edge */}
+        {/* Spacer */}
         <div className="flex-1" />
 
-        {/* Feed/Bookmarks — visually isolated from the other controls */}
+        {/* Centered Feed/Bookmarks toggle — anchored to viewport center so it
+            lines up with the feed column (which is max-w-3xl mx-auto). */}
         {mode && onModeChange && (
-          <ModeToggle value={mode} onChange={onModeChange} bookmarkCount={bookmarkCount} />
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none">
+            <div className="pointer-events-auto">
+              <ModeToggle value={mode} onChange={onModeChange} bookmarkCount={bookmarkCount} />
+            </div>
+          </div>
         )}
-
-        {/* Extra breathing room between Mode and the list/sort/settings cluster */}
-        <div className="w-6" />
 
         {/* Right cluster: list / sort / settings */}
         <div className="flex items-center gap-2">
