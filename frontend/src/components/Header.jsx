@@ -3,7 +3,7 @@ import SortModeToggle from './SortModeToggle.jsx';
 import ModeToggle from './ModeToggle.jsx';
 import ListSelector from './ListSelector.jsx';
 import ContentFilterToggle from './ContentFilterToggle.jsx';
-import { IconSearch, IconSettings, IconMenu, IconClose } from './icons.jsx';
+import { IconSearch, IconSettings, IconMenu, IconClose, IconRefresh } from './icons.jsx';
 
 /**
  * Responsive app header.
@@ -26,6 +26,7 @@ export default function Header({
   lists, activeListId, onListChange, onCreateList,
   onOpenSidebar,
   contentFilter, onContentFilterChange,
+  onTriggerCollection,
 }) {
   // Mobile search expand state
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
@@ -33,6 +34,15 @@ export default function Header({
   useEffect(() => {
     if (mobileSearchOpen) mobileSearchRef.current?.focus();
   }, [mobileSearchOpen]);
+
+  // Collect-now button state
+  const [collecting, setCollecting] = useState(false);
+  const onCollect = async () => {
+    if (collecting || !onTriggerCollection) return;
+    setCollecting(true);
+    try { await onTriggerCollection(); }
+    finally { setCollecting(false); }
+  };
 
   // Auto-close mobile search on Esc or when cleared+blurred
   const onMobileSearchKey = (e) => {
@@ -109,6 +119,18 @@ export default function Header({
           {mode !== 'bookmarks' && (
             <SortModeToggle value={sort} onChange={onSortChange} />
           )}
+          {onTriggerCollection && (
+            <button
+              onClick={onCollect}
+              className="btn text-sm"
+              title="Collect now"
+              aria-label="Collect now"
+              disabled={collecting}
+            >
+              <IconRefresh className={`w-4 h-4 ${collecting ? 'animate-spin' : ''}`} />
+              <span className="hidden lg:inline">{collecting ? 'Collecting…' : 'Collect'}</span>
+            </button>
+          )}
           <button
             onClick={onOpenSettings}
             className="btn text-sm"
@@ -142,6 +164,17 @@ export default function Header({
         >
           {mobileSearchOpen ? <IconClose className="w-5 h-5" /> : <IconSearch className="w-5 h-5" />}
         </button>
+        {onTriggerCollection && (
+          <button
+            onClick={onCollect}
+            className="p-2 text-fg-muted hover:text-fg disabled:opacity-50"
+            aria-label="Collect now"
+            title="Collect now"
+            disabled={collecting}
+          >
+            <IconRefresh className={`w-5 h-5 ${collecting ? 'animate-spin' : ''}`} />
+          </button>
+        )}
         <button
           onClick={onOpenSettings}
           className="p-2 text-fg-muted hover:text-fg"

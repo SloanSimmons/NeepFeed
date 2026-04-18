@@ -192,6 +192,7 @@ export default function App() {
         onOpenSidebar={() => setSidebarOpen(true)}
         contentFilter={contentFilter}
         onContentFilterChange={setContentFilter}
+        onTriggerCollection={onTriggerCollection}
       />
 
       <MobileSidebar
