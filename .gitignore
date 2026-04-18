@@ -30,3 +30,7 @@ Thumbs.db
 *.log
 dist/
 build/
+
+# Local handoff / session notes (kept out of version control — context
+# lives in the Obsidian vault at Dev/NeepFeed/ instead)
+NeepFeed-Handoff-*.md
