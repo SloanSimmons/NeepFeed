@@ -77,6 +77,8 @@ export const api = {
   // Settings
   settings: () => req('/api/settings'),
   updateSettings: (patch) => req('/api/settings', { method: 'POST', body: patch }),
+  setRedditCookie: (cookie) => req('/api/settings/reddit-cookie', { method: 'POST', body: { cookie } }),
+  clearRedditCookie: () => req('/api/settings/reddit-cookie', { method: 'DELETE' }),
   exportConfig: () => fetch('/api/config/export', { method: 'POST' }).then((r) => r.blob()),
   importConfig: (payload) => req('/api/config/import', { method: 'POST', body: payload }),
 

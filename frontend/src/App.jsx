@@ -213,6 +213,23 @@ export default function App() {
 
       <FreshBatchBanner count={freshBatch} onClick={onFreshBatchClick} />
 
+      {settings?.reddit_session_stale && (
+        <div className="bg-amber-500/15 border-b border-amber-500/40 text-amber-200 text-sm">
+          <div className="max-w-3xl mx-auto px-4 py-2 flex items-center justify-between gap-4">
+            <div>
+              <strong className="font-semibold">Reddit session expired.</strong>{' '}
+              NSFW / quarantined subs will stop collecting until you paste fresh cookies.
+            </div>
+            <button
+              onClick={() => { setSettingsTab('data'); setSettingsOpen(true); }}
+              className="btn text-xs whitespace-nowrap border-amber-500/60 hover:bg-amber-500/10"
+            >
+              Paste cookies →
+            </button>
+          </div>
+        </div>
+      )}
+
       <SettingsModal
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}

@@ -66,6 +66,91 @@ function FreshnessSlider({ value, onChange }) {
   );
 }
 
+function RedditCookieSection({ settings, onUpdate }) {
+  const [draft, setDraft] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const present = !!settings?.reddit_session_present;
+  const stale = !!settings?.reddit_session_stale;
+
+  const onSave = async () => {
+    const v = draft.trim();
+    if (!v) { setMsg({ kind: 'err', text: 'Paste the Cookie header value first.' }); return; }
+    setBusy(true); setMsg(null);
+    try {
+      await api.setRedditCookie(v);
+      setDraft('');
+      setMsg({ kind: 'ok', text: 'Saved. Next collection cycle will use these cookies.' });
+      await onUpdate({});  // triggers a settings re-fetch via the hook
+    } catch (e) {
+      setMsg({ kind: 'err', text: e.payload?.error || e.message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onClear = async () => {
+    if (!confirm('Clear stored Reddit session cookies? NSFW / quarantined subs will stop collecting.')) return;
+    setBusy(true); setMsg(null);
+    try {
+      await api.clearRedditCookie();
+      setMsg({ kind: 'ok', text: 'Cookies cleared.' });
+      await onUpdate({});
+    } catch (e) {
+      setMsg({ kind: 'err', text: e.payload?.error || e.message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  let statusText, statusColor;
+  if (stale) { statusText = 'Session expired — paste fresh cookies'; statusColor = 'text-amber-400'; }
+  else if (present) { statusText = 'Cookies active'; statusColor = 'text-emerald-400'; }
+  else { statusText = 'No cookies set (NSFW / quarantined subs unreachable)'; statusColor = 'text-fg-muted'; }
+
+  return (
+    <div className="space-y-2 pt-4 border-t border-white/5">
+      <div className="flex items-baseline justify-between">
+        <h3 className="text-sm font-semibold">Reddit session cookies</h3>
+        <span className={`text-xs ${statusColor}`}>{statusText}</span>
+      </div>
+      <p className="text-xs text-fg-muted">
+        Required for NSFW, quarantined, or subscription-gated subs. Open reddit.com in a
+        logged-in browser → DevTools (F12) → Network tab → click any request to reddit.com
+        → Headers → copy the full <code>Cookie</code> header value → paste below. Expires
+        every few weeks; you'll see a banner here when that happens.
+      </p>
+      <textarea
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        placeholder="edgebucket=...; reddit_session=...; token_v2=...; ..."
+        rows={3}
+        className="w-full bg-bg border border-white/10 rounded-lg p-2 text-xs font-mono"
+        disabled={busy}
+      />
+      <div className="flex flex-wrap gap-2">
+        <button onClick={onSave} disabled={busy} className="btn-primary text-sm">
+          {present ? 'Replace cookies' : 'Save cookies'}
+        </button>
+        {present && (
+          <button onClick={onClear} disabled={busy} className="btn text-sm text-red-400 hover:bg-red-500/10">
+            Clear cookies
+          </button>
+        )}
+      </div>
+      {msg && (
+        <div className={`text-xs ${msg.kind === 'ok' ? 'text-emerald-400' : 'text-red-400'}`}>
+          {msg.text}
+        </div>
+      )}
+      <p className="text-[11px] text-fg-dim">
+        Stored in the local SQLite DB (same filesystem privacy as the rest of your data).
+        Never sent to anyone except reddit.com. Not included in config exports.
+      </p>
+    </div>
+  );
+}
+
 export default function SettingsModal({ open, onClose, settings, onUpdate, skin, listsHook, initialTab }) {
   const [tab, setTab] = useState(initialTab || 'subs');
   const modalRef = useRef(null);
@@ -277,6 +362,7 @@ export default function SettingsModal({ open, onClose, settings, onUpdate, skin,
                   Reset to defaults
                 </button>
               </div>
+              <RedditCookieSection settings={settings} onUpdate={onUpdate} />
               <div className="text-xs text-fg-dim pt-3 border-t border-white/5 mt-4">
                 <div>Keyboard shortcuts:</div>
                 <div className="mt-1 grid grid-cols-2 gap-x-4 gap-y-0.5 font-mono">
