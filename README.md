@@ -156,6 +156,16 @@ OAuth via PRAW is optional and only useful if you've been granted an approved Re
 
 Force a specific client with `REDDIT_CLIENT_MODE=mock` (offline dev), `REDDIT_CLIENT_MODE=http`, or `REDDIT_CLIENT_MODE=praw`.
 
+### NSFW, quarantined, and subscription-gated subs
+
+Anonymous requests get a login redirect from Reddit for these. To unlock them without an OAuth app, paste your Reddit session cookies into Settings → Data → **Reddit session cookies**:
+
+1. Open reddit.com in a logged-in browser.
+2. DevTools (F12) → Network tab → click any request to reddit.com → Request Headers → copy the full `Cookie` header value.
+3. Paste into the textarea, hit **Save cookies**.
+
+The cookie is stored in the local SQLite DB (same filesystem privacy as the rest of your data) and sent with every Reddit request. When it expires — typically every few weeks — an amber banner appears above the feed prompting you to paste a fresh one. Clearing the cookie returns NeepFeed to anonymous mode.
+
 ## Docker (production)
 
 ```bash
