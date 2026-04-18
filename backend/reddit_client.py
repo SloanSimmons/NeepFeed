@@ -584,7 +584,17 @@ class HTTPRedditClient:
             "REDDIT_USER_AGENT",
             "NeepFeed/1.0 (self-hosted personal reader)",
         )
-        headers = {"User-Agent": self._ua, "Accept": "application/json"}
+        headers = {
+            "User-Agent": self._ua,
+            "Accept": "application/json",
+            # httpx defaults to `Accept-Encoding: gzip, deflate` and
+            # `Connection: keep-alive`, which in combination with a Cookie
+            # header gets 403'd by Reddit's WAF (empirically: urllib returns
+            # 200 with the same cookie, so it's an httpx-fingerprint block).
+            # Forcing identity encoding lifts the block and the JSON payloads
+            # we fetch are small enough that compression barely matters.
+            "Accept-Encoding": "identity",
+        }
         self._cookie = _load_reddit_cookie_from_db()
         if self._cookie:
             headers["Cookie"] = self._cookie
