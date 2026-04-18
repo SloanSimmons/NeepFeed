@@ -506,11 +506,72 @@ def _to_postdata(d: dict[str, Any]) -> PostData:
     )
 
 
+_COOKIE_CONFIG_KEY = "_reddit_session_cookie"
+_STALE_CONFIG_KEY = "_reddit_session_stale"
+
+
+def _load_reddit_cookie_from_db() -> str | None:
+    """Read the stored Reddit session cookie without a Flask request context."""
+    try:
+        from db import new_connection
+    except ImportError:
+        return None
+    conn = None
+    try:
+        conn = new_connection()
+        row = conn.execute(
+            "SELECT value FROM user_config WHERE key=?", (_COOKIE_CONFIG_KEY,)
+        ).fetchone()
+        value = (row["value"] if row else None) or None
+        return value.strip() or None if value else None
+    except Exception as e:  # noqa: BLE001
+        log.warning("load reddit_session_cookie failed: %s", e)
+        return None
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+def _mark_reddit_session_stale(stale: bool) -> None:
+    """Toggle the stale flag in user_config from any thread."""
+    try:
+        from db import new_connection
+    except ImportError:
+        return
+    conn = None
+    try:
+        conn = new_connection()
+        conn.execute(
+            "INSERT INTO user_config(key, value) VALUES(?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (_STALE_CONFIG_KEY, "true" if stale else "false"),
+        )
+    except Exception as e:  # noqa: BLE001
+        log.warning("mark reddit_session_stale failed: %s", e)
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+def _is_login_redirect(location: str) -> bool:
+    """True if a redirect Location header looks like Reddit's auth/age gate."""
+    if not location:
+        return False
+    loc = location.lower()
+    return any(marker in loc for marker in ("/login", "over18", "quarantine", "reddit.com/login"))
+
+
 class HTTPRedditClient:
     """Reddit public JSON endpoints. No OAuth, no app approval required.
 
     Rate-limited to ~60 req/min unauthenticated; we throttle at 1 req/sec with a
     real User-Agent header to stay within Reddit's politeness norms.
+
+    If a Reddit session cookie is stored in user_config (via the Settings UI),
+    it is attached to every request so the client sees NSFW / quarantined /
+    subscription-gated content as if it were the logged-in user. A stale flag
+    is raised when a cookie'd request is redirected to login — the UI surfaces
+    this as a banner prompting the user to paste fresh cookies.
     """
 
     BASE = "https://www.reddit.com"
@@ -523,13 +584,20 @@ class HTTPRedditClient:
             "REDDIT_USER_AGENT",
             "NeepFeed/1.0 (self-hosted personal reader)",
         )
+        headers = {"User-Agent": self._ua, "Accept": "application/json"}
+        self._cookie = _load_reddit_cookie_from_db()
+        if self._cookie:
+            headers["Cookie"] = self._cookie
         self._client = httpx.Client(
-            headers={"User-Agent": self._ua, "Accept": "application/json"},
+            headers=headers,
             timeout=30.0,
             follow_redirects=False,
         )
         self._last_call = 0.0
-        log.info("HTTPRedditClient initialized (UA=%s)", self._ua)
+        if self._cookie:
+            log.info("HTTPRedditClient initialized (UA=%s, session cookie attached)", self._ua)
+        else:
+            log.info("HTTPRedditClient initialized (UA=%s)", self._ua)
 
     def _throttle(self) -> None:
         elapsed = time.monotonic() - self._last_call
@@ -552,7 +620,18 @@ class HTTPRedditClient:
             log.warning("Rate limited on %s; sleeping %ds", path, retry_after)
             time.sleep(retry_after)
             return None
-        if r.status_code in (301, 302, 403, 404):
+        if r.status_code in (301, 302):
+            location = r.headers.get("Location", "")
+            if self._cookie and _is_login_redirect(location):
+                log.warning(
+                    "GET %s -> %d to %s while session cookie attached; marking session stale",
+                    path, r.status_code, location[:120],
+                )
+                _mark_reddit_session_stale(True)
+            else:
+                log.info("GET %s -> %d (skipping; loc=%s)", path, r.status_code, location[:80])
+            return None
+        if r.status_code in (403, 404):
             log.info("GET %s -> %d (skipping)", path, r.status_code)
             return None
         if r.status_code >= 500:

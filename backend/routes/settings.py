@@ -17,6 +17,15 @@ from db import get_db
 
 bp = Blueprint("settings", __name__)
 
+# Keys that must NEVER be returned in GET /api/settings or exported/imported:
+# underscore prefix already hides them from the generic dict passthrough, but we
+# surface derived presence/stale flags so the UI can show cookie status.
+_REDDIT_COOKIE_KEY = "_reddit_session_cookie"
+_REDDIT_STALE_KEY = "_reddit_session_stale"
+
+# Soft upper bound — a sanity check against someone pasting an entire page.
+_COOKIE_MAX_LEN = 8192
+
 
 # Known settings keys + their parse/serialize helpers.
 # Anything not in this map can still be set via generic string passthrough.
@@ -87,6 +96,10 @@ def get_settings():
     for key, val in raw.items():
         if key not in _SETTING_SPECS and not key.startswith("_"):
             out.setdefault(key, val)
+    # Derived flags for the Reddit session cookie (the cookie itself is never
+    # returned — only whether one is set and whether it appears to have expired).
+    out["reddit_session_present"] = bool((raw.get(_REDDIT_COOKIE_KEY) or "").strip())
+    out["reddit_session_stale"] = (raw.get(_REDDIT_STALE_KEY) or "false").lower() == "true"
     return jsonify(out)
 
 
@@ -113,6 +126,56 @@ def update_settings():
     if errors:
         return jsonify({"success": False, "errors": errors, "applied": applied}), 400
     return get_settings()
+
+
+# ---------------------------------------------------------------------------
+# Reddit session cookie (unlocks NSFW / quarantined / subscription-gated subs)
+# ---------------------------------------------------------------------------
+
+@bp.post("/settings/reddit-cookie")
+def set_reddit_cookie():
+    body = request.get_json(silent=True) or {}
+    raw = body.get("cookie")
+    if not isinstance(raw, str):
+        return jsonify({"error": "cookie must be a string"}), 400
+    cookie = raw.strip()
+    if not cookie:
+        return jsonify({"error": "cookie is empty"}), 400
+    if len(cookie) > _COOKIE_MAX_LEN:
+        return jsonify({"error": f"cookie exceeds {_COOKIE_MAX_LEN} chars"}), 400
+    # Basic shape check: must look like `name=value; name=value; ...` — reject
+    # pasted JSON or a whole HAR file.
+    if "=" not in cookie or cookie.startswith("{") or cookie.startswith("["):
+        return jsonify({"error": "expected raw Cookie header value (name=value; ...)"}), 400
+
+    db = get_db()
+    db.execute(
+        "INSERT INTO user_config(key, value) VALUES(?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        (_REDDIT_COOKIE_KEY, cookie),
+    )
+    db.execute(
+        "INSERT INTO user_config(key, value) VALUES(?, 'false') "
+        "ON CONFLICT(key) DO UPDATE SET value='false'",
+        (_REDDIT_STALE_KEY,),
+    )
+    return jsonify({
+        "success": True,
+        "reddit_session_present": True,
+        "reddit_session_stale": False,
+    })
+
+
+@bp.delete("/settings/reddit-cookie")
+def clear_reddit_cookie():
+    db = get_db()
+    db.execute("DELETE FROM user_config WHERE key=?", (_REDDIT_COOKIE_KEY,))
+    db.execute("DELETE FROM user_config WHERE key=?", (_REDDIT_STALE_KEY,))
+    return jsonify({
+        "success": True,
+        "reddit_session_present": False,
+        "reddit_session_stale": False,
+    })
 
 
 # ---------------------------------------------------------------------------
