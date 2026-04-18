@@ -27,6 +27,48 @@ _REDDIT_STALE_KEY = "_reddit_session_stale"
 _COOKIE_MAX_LEN = 8192
 
 
+def _extract_cookie_value(raw: str) -> str | None:
+    """Pull a single-line Cookie header value out of what the user pasted.
+
+    DevTools in Chrome/Edge with HTTP/2 shows the request headers as one big
+    newline-separated block (pseudo-headers `:authority`, etc.); users copying
+    that whole thing end up with ~5k chars of mixed junk. This helper accepts:
+
+      - a raw single-line value ("name=value; name=value; ...") — returned as-is
+      - a full `Cookie: name=value; ...` line — strips the prefix
+      - a DevTools raw-request paste — finds the line after a bare "cookie" /
+        "Cookie" header and returns that
+
+    Returns None if no plausible cookie line can be found.
+    """
+    if not raw:
+        return None
+    s = raw.strip()
+
+    # Case 1: already a clean single-line cookie value.
+    if "\n" not in s and "\r" not in s:
+        if s.lower().startswith("cookie:"):
+            return s.split(":", 1)[1].strip() or None
+        return s
+
+    # Case 2/3: multi-line paste. Look for a "cookie" header line.
+    lines = [ln.strip() for ln in s.replace("\r", "\n").split("\n") if ln.strip()]
+    for i, ln in enumerate(lines):
+        low = ln.lower()
+        # HTTP/1 style: "Cookie: name=value; ..."
+        if low.startswith("cookie:"):
+            candidate = ln.split(":", 1)[1].strip()
+            if candidate and "=" in candidate:
+                return candidate
+        # HTTP/2 pseudo-header style (Chrome DevTools): a bare "cookie" line,
+        # followed by the value on the next line.
+        if low == "cookie" and i + 1 < len(lines):
+            candidate = lines[i + 1]
+            if candidate and "=" in candidate and not candidate.startswith(":"):
+                return candidate
+    return None
+
+
 # Known settings keys + their parse/serialize helpers.
 # Anything not in this map can still be set via generic string passthrough.
 _SETTING_SPECS: dict[str, dict] = {
@@ -138,13 +180,18 @@ def set_reddit_cookie():
     raw = body.get("cookie")
     if not isinstance(raw, str):
         return jsonify({"error": "cookie must be a string"}), 400
-    cookie = raw.strip()
+    cookie = _extract_cookie_value(raw)
     if not cookie:
-        return jsonify({"error": "cookie is empty"}), 400
+        return jsonify({
+            "error": "no cookie value found — paste just the Cookie header "
+                     "value (a long name=value; name=value; ... string)",
+        }), 400
     if len(cookie) > _COOKIE_MAX_LEN:
         return jsonify({"error": f"cookie exceeds {_COOKIE_MAX_LEN} chars"}), 400
-    # Basic shape check: must look like `name=value; name=value; ...` — reject
-    # pasted JSON or a whole HAR file.
+    # httpx rejects headers with \r or \n. _extract_cookie_value should have
+    # stripped these but double-check.
+    if "\n" in cookie or "\r" in cookie:
+        return jsonify({"error": "cookie contains a newline"}), 400
     if "=" not in cookie or cookie.startswith("{") or cookie.startswith("["):
         return jsonify({"error": "expected raw Cookie header value (name=value; ...)"}), 400
 
