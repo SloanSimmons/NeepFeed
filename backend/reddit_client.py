@@ -659,15 +659,34 @@ class HTTPRedditClient:
             batch = subreddits[i : i + batch_size]
             joined = "+".join(batch)
             data = self._get(f"/r/{joined}/hot.json", {"limit": limit_per_batch})
-            if not data:
+            if data:
+                for child in ((data.get("data") or {}).get("children") or []):
+                    d = child.get("data") or {}
+                    try:
+                        yield _to_postdata(d)
+                    except (KeyError, ValueError) as e:
+                        log.warning("skipping malformed post: %s", e)
+                        continue
                 continue
-            for child in ((data.get("data") or {}).get("children") or []):
-                d = child.get("data") or {}
-                try:
-                    yield _to_postdata(d)
-                except (KeyError, ValueError) as e:
-                    log.warning("skipping malformed post: %s", e)
+            # Batched fetch failed (Reddit 403s multi-reddit URLs that include
+            # certain NSFW / gated subs even when authenticated). Fall back to
+            # per-sub fetches so one gated sub doesn't poison the batch.
+            per_sub_limit = max(10, limit_per_batch // max(1, len(batch)))
+            log.info(
+                "batch %s failed; falling back to per-sub fetches (limit=%d each)",
+                joined[:80], per_sub_limit,
+            )
+            for sub in batch:
+                solo = self._get(f"/r/{sub}/hot.json", {"limit": per_sub_limit})
+                if not solo:
                     continue
+                for child in ((solo.get("data") or {}).get("children") or []):
+                    d = child.get("data") or {}
+                    try:
+                        yield _to_postdata(d)
+                    except (KeyError, ValueError) as e:
+                        log.warning("skipping malformed post: %s", e)
+                        continue
 
     def fetch_top_day(self, subreddit: str, limit: int = 30) -> Iterator[PostData]:
         data = self._get(f"/r/{subreddit}/top.json", {"t": "day", "limit": limit})
