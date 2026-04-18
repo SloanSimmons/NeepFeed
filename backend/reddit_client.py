@@ -1,11 +1,15 @@
 """Reddit client abstraction.
 
-Two implementations:
+Three implementations:
   - MockRedditClient: generates realistic synthetic posts, no network required.
-    Used by default during development before Reddit API approval.
-  - PRAWRedditClient: real Reddit API via PRAW, activated when env vars set.
+    Explicit opt-in via REDDIT_CLIENT_MODE=mock for offline dev.
+  - HTTPRedditClient: hits Reddit's public .json endpoints (no OAuth). Default.
+  - PRAWRedditClient: real Reddit API via PRAW, activated when OAuth env vars
+    are set or REDDIT_CLIENT_MODE=praw. Retained in case a Reddit app is ever
+    approved under the post-Nov-2025 Responsible Builder Policy.
 
-Both expose the same interface so the collection job doesn't care which is active:
+All three expose the same interface so the collection job doesn't care which
+is active:
 
     fetch_hot_batch(subreddits, limit_per_batch=100, batch_size=25) -> Iterable[PostData]
     fetch_top_day(subreddit, limit=30) -> Iterable[PostData]
@@ -21,7 +25,7 @@ import os
 import random
 import time
 from dataclasses import dataclass, field
-from typing import Iterable, Iterator, Protocol
+from typing import Any, Iterable, Iterator, Protocol
 
 log = logging.getLogger("neepfeed.reddit")
 
@@ -444,14 +448,187 @@ class PRAWRedditClient:
 
 
 # ---------------------------------------------------------------------------
+# HTTP client (public Reddit JSON endpoints — no OAuth)
+# ---------------------------------------------------------------------------
+
+def _to_postdata(d: dict[str, Any]) -> PostData:
+    """Map a Reddit child `data` dict (from raw_json=1 responses) to PostData."""
+    media = d.get("media") or {}
+    reddit_video = media.get("reddit_video") if isinstance(media, dict) else None
+    video_url = reddit_video.get("fallback_url") if isinstance(reddit_video, dict) else None
+
+    gallery_urls: list[str] = []
+    if d.get("is_gallery") and isinstance(d.get("media_metadata"), dict):
+        for _mid, meta in d["media_metadata"].items():
+            try:
+                gallery_urls.append(meta["s"]["u"])
+            except (KeyError, TypeError):
+                continue
+
+    selftext_preview = None
+    if d.get("is_self") and d.get("selftext"):
+        selftext_preview = d["selftext"][:300]
+
+    thumb = d.get("thumbnail")
+    if thumb in ("self", "default", "nsfw", "spoiler", "image", "", None):
+        thumb = None
+
+    post_hint = d.get("post_hint")
+    if not post_hint:
+        if d.get("is_video"):
+            post_hint = "hosted:video"
+        elif d.get("is_gallery"):
+            post_hint = "gallery"
+        elif d.get("is_self"):
+            post_hint = "self"
+        else:
+            post_hint = "link"
+
+    return PostData(
+        reddit_id=d["id"],
+        subreddit=str(d["subreddit"]).lower(),
+        title=d["title"],
+        url=d.get("url") or "",
+        permalink=d.get("permalink") or "",
+        author=d.get("author") or "[deleted]",
+        score=int(d.get("score") or 0),
+        num_comments=int(d.get("num_comments") or 0),
+        upvote_ratio=float(d.get("upvote_ratio") or 0.0),
+        created_utc=int(d.get("created_utc") or 0),
+        is_nsfw=bool(d.get("over_18")),
+        is_video=bool(d.get("is_video")),
+        thumbnail=thumb,
+        video_url=video_url,
+        selftext_preview=selftext_preview,
+        link_flair=d.get("link_flair_text"),
+        post_hint=post_hint,
+        gallery_urls=gallery_urls,
+    )
+
+
+class HTTPRedditClient:
+    """Reddit public JSON endpoints. No OAuth, no app approval required.
+
+    Rate-limited to ~60 req/min unauthenticated; we throttle at 1 req/sec with a
+    real User-Agent header to stay within Reddit's politeness norms.
+    """
+
+    BASE = "https://www.reddit.com"
+
+    def __init__(self) -> None:
+        import httpx  # lazy import
+
+        self._httpx = httpx
+        self._ua = os.environ.get(
+            "REDDIT_USER_AGENT",
+            "NeepFeed/1.0 (self-hosted personal reader)",
+        )
+        self._client = httpx.Client(
+            headers={"User-Agent": self._ua, "Accept": "application/json"},
+            timeout=30.0,
+            follow_redirects=False,
+        )
+        self._last_call = 0.0
+        log.info("HTTPRedditClient initialized (UA=%s)", self._ua)
+
+    def _throttle(self) -> None:
+        elapsed = time.monotonic() - self._last_call
+        if elapsed < 1.0:
+            time.sleep(1.0 - elapsed)
+        self._last_call = time.monotonic()
+
+    def _get(self, path: str, params: dict | None = None) -> Any:
+        self._throttle()
+        url = self.BASE + path
+        full_params = {"raw_json": 1, **(params or {})}
+        try:
+            r = self._client.get(url, params=full_params)
+        except self._httpx.HTTPError as e:
+            log.warning("GET %s failed: %s", path, e)
+            return None
+
+        if r.status_code == 429:
+            retry_after = int(r.headers.get("Retry-After", "60") or 60)
+            log.warning("Rate limited on %s; sleeping %ds", path, retry_after)
+            time.sleep(retry_after)
+            return None
+        if r.status_code in (301, 302, 403, 404):
+            log.info("GET %s -> %d (skipping)", path, r.status_code)
+            return None
+        if r.status_code >= 500:
+            log.warning("GET %s -> %d (server error)", path, r.status_code)
+            return None
+        if r.status_code != 200:
+            log.warning("GET %s -> %d (unexpected)", path, r.status_code)
+            return None
+
+        try:
+            return r.json()
+        except ValueError:
+            log.warning("GET %s -> non-JSON body", path)
+            return None
+
+    def fetch_hot_batch(
+        self,
+        subreddits: list[str],
+        limit_per_batch: int = 100,
+        batch_size: int = 25,
+    ) -> Iterator[PostData]:
+        if not subreddits:
+            return
+        for i in range(0, len(subreddits), batch_size):
+            batch = subreddits[i : i + batch_size]
+            joined = "+".join(batch)
+            data = self._get(f"/r/{joined}/hot.json", {"limit": limit_per_batch})
+            if not data:
+                continue
+            for child in ((data.get("data") or {}).get("children") or []):
+                d = child.get("data") or {}
+                try:
+                    yield _to_postdata(d)
+                except (KeyError, ValueError) as e:
+                    log.warning("skipping malformed post: %s", e)
+                    continue
+
+    def fetch_top_day(self, subreddit: str, limit: int = 30) -> Iterator[PostData]:
+        data = self._get(f"/r/{subreddit}/top.json", {"t": "day", "limit": limit})
+        if not data:
+            return
+        for child in ((data.get("data") or {}).get("children") or []):
+            d = child.get("data") or {}
+            try:
+                yield _to_postdata(d)
+            except (KeyError, ValueError) as e:
+                log.warning("skipping malformed post: %s", e)
+                continue
+
+    def refresh_video_url(self, reddit_id: str) -> str | None:
+        data = self._get(f"/comments/{reddit_id}.json")
+        if not isinstance(data, list) or not data:
+            return None
+        try:
+            post = data[0]["data"]["children"][0]["data"]
+        except (KeyError, TypeError, IndexError):
+            return None
+        media = post.get("media") or {}
+        reddit_video = media.get("reddit_video") if isinstance(media, dict) else None
+        if isinstance(reddit_video, dict):
+            return reddit_video.get("fallback_url")
+        return None
+
+
+# ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------
 
 def get_client() -> RedditClient:
-    """Auto-select client based on env.
+    """Select a Reddit client based on env.
 
-    REDDIT_CLIENT_MODE overrides: 'mock' forces mock, 'praw' forces real.
-    Otherwise: if all PRAW env vars are present, use real; else mock.
+    REDDIT_CLIENT_MODE explicit values: 'mock' | 'http' | 'praw'.
+    Unset: use PRAW if all four OAuth env vars are present, otherwise HTTP.
+
+    Default (post-Nov-2025) is the HTTP public-JSON client — no OAuth app
+    approval is required. Mock is explicit opt-in for offline dev.
     """
     mode = os.environ.get("REDDIT_CLIENT_MODE", "").strip().lower()
     if mode == "mock":
@@ -460,13 +637,16 @@ def get_client() -> RedditClient:
     if mode == "praw":
         log.info("RedditClient: PRAW (forced by REDDIT_CLIENT_MODE)")
         return PRAWRedditClient()
+    if mode == "http":
+        log.info("RedditClient: HTTP (forced by REDDIT_CLIENT_MODE)")
+        return HTTPRedditClient()
 
-    has_creds = all(
+    has_praw_creds = all(
         os.environ.get(k)
         for k in ("REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET", "REDDIT_USERNAME", "REDDIT_PASSWORD")
     )
-    if has_creds:
+    if has_praw_creds:
         log.info("RedditClient: PRAW (credentials detected)")
         return PRAWRedditClient()
-    log.info("RedditClient: mock (no credentials)")
-    return MockRedditClient()
+    log.info("RedditClient: HTTP (public JSON endpoints \u2014 no auth required)")
+    return HTTPRedditClient()
