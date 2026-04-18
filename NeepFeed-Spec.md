@@ -803,3 +803,10 @@ On top of the spec: `/api/search` (FTS5), `/api/bookmarks`, `/api/posts/<id>/see
 ### Skins
 
 See `NeepFeed-Skin-System.md` for the full spec and deviations. Highlights: 3 built-in skins (Dark / Light / Paper) instead of 5, no URL-share (JSON file export/import instead), contrast validation runs client-side only.
+
+### Reddit API access
+
+- **Default client is public JSON endpoints, not OAuth/PRAW.** Reddit retired self-service API key creation in November 2025 under the Responsible Builder Policy and explicitly flags personal self-hosted readers as the highest-rejection category. `HTTPRedditClient` hits `https://www.reddit.com/r/<sub>/hot.json` (and the `+`-joined multi-reddit syntax) with a descriptive `REDDIT_USER_AGENT` and a 1 req/sec throttle. Covers every feature NeepFeed uses — read-only, no auth.
+- **`PRAWRedditClient` retained** behind `REDDIT_CLIENT_MODE=praw` or presence of all four OAuth env vars, in case Reddit ever approves an app.
+- **`MockRedditClient` retained** behind `REDDIT_CLIENT_MODE=mock` for offline development.
+- All three clients implement the same `RedditClient` Protocol and return the same `PostData` dataclass, so the collection job, scoring, API, and frontend are agnostic to the active client.

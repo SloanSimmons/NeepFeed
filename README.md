@@ -1,6 +1,6 @@
 # NeepFeed
 
-> Self-hosted Reddit feed aggregator with engagement-weighted scoring, lists, live preview themes, and PRAW-backed collection.
+> Self-hosted Reddit feed aggregator with engagement-weighted scoring, lists, live preview themes, and public-JSON-endpoint collection.
 
 ![Python 3.12](https://img.shields.io/badge/python-3.12-blue) ![Node 22](https://img.shields.io/badge/node-22-green) ![License: MIT](https://img.shields.io/badge/license-MIT-lightgrey)
 
@@ -19,7 +19,7 @@ Designed for **daily driving**. Keyboard-first. Mobile + desktop. Media-forward.
 - **Cross-post dedup.** Same URL across r/news + r/worldnews shows once, with "also in r/X" metadata on the card.
 - **Diversity cap.** Configurable max share of the feed any single sub can occupy. No sub floods your screen.
 - **Lists.** Subs can belong to multiple named lists (Tech / Gaming / News / …). Feed filters by list or shows all merged.
-- **Mock client for development.** Before Reddit API approval, a mock generates realistic posts (archetype-aware: tech subs get self/link heavy, pics subs get image/gallery heavy) with cross-posts, varied ages, and video URLs backed by public sample MP4s.
+- **Mock client for offline development.** Set `REDDIT_CLIENT_MODE=mock` and a synthetic generator produces archetype-aware posts (tech subs get self/link heavy, pics subs get image/gallery heavy) with cross-posts, varied ages, and video URLs backed by public sample MP4s.
 - **Media-forward UI.** Videos autoplay muted via IntersectionObserver, galleries swipe on touch, link thumbnails lazy-load, videos refresh expired CDN URLs on first error.
 - **Seen tracking.** Posts mark themselves seen after 600ms dwell, batched every 3 s. Toggle to dim them or hide entirely.
 - **Blocklists.** Keywords, authors, domains, subreddits.
@@ -55,7 +55,7 @@ Single Docker container. Flask serves the built React SPA as static files + JSON
 ```
 
 - **Backend:** Flask 3 + APScheduler + SQLite (WAL + FTS5)
-- **Reddit API:** PRAW 7 (with an automatic mock fallback when credentials aren't set)
+- **Reddit API:** public `.json` endpoints via httpx (default, no auth). PRAW 7 retained as an opt-in path if a Reddit OAuth app is ever approved. Mock client available for offline dev.
 - **Frontend:** React 18 + Vite + Tailwind (with CSS-variable-driven skins)
 - **Deploy:** Docker + Docker Compose (Dockerfile is multi-stage: node:22 builder → python:3.12-slim runtime)
 
@@ -68,7 +68,7 @@ NeepFeed/
 │   ├── db.py                 SQLite connection, schema init, config helpers
 │   ├── schema.sql            Base schema (v1)
 │   ├── migrations.py         Versioned migrations (currently v1→v2 for lists)
-│   ├── reddit_client.py      Abstract protocol + MockRedditClient + PRAWRedditClient
+│   ├── reddit_client.py      Abstract protocol + Mock/HTTP/PRAW client implementations
 │   ├── collection.py         Background collection job + cleanup
 │   ├── scoring.py            calculated_score + velocity + diversity cap + crosspost dedup
 │   ├── url_utils.py          URL normalization + hashing for dedup
@@ -142,20 +142,19 @@ curl -X POST http://localhost:5000/api/collect/trigger
 
 ## Reddit API setup
 
-While credentials are missing, NeepFeed runs the **MockRedditClient** automatically. To use real Reddit:
+**NeepFeed uses Reddit's public JSON endpoints by default.** No API application or approval is required. Just set a descriptive `REDDIT_USER_AGENT` in `.env` — Reddit throttles blank / default User-Agents aggressively.
 
-1. Create a Reddit app: https://www.reddit.com/prefs/apps → *create another app…* → **script** type.
-2. Copy `client_id`, `client_secret`, your reddit username/password into `.env`:
-   ```bash
-   REDDIT_CLIENT_ID=your_id
-   REDDIT_CLIENT_SECRET=your_secret
-   REDDIT_USERNAME=your_username
-   REDDIT_PASSWORD=your_password
-   REDDIT_USER_AGENT=NeepFeed/1.0 (by /u/your_username)
-   ```
-3. Restart the backend. Log line should read `RedditClient: PRAW (credentials detected)`.
+```bash
+REDDIT_USER_AGENT=NeepFeed/1.0 (self-hosted personal reader; by /u/your_reddit_username)
+```
 
-Force override with `REDDIT_CLIENT_MODE=mock` or `REDDIT_CLIENT_MODE=praw`.
+On startup the log line will read `RedditClient: HTTP (public JSON endpoints — no auth required)`.
+
+OAuth via PRAW is optional and only useful if you've been granted an approved Reddit app under the Responsible Builder Policy (self-service key creation was retired in November 2025, and personal self-hosted readers are the highest-rejection category — don't plan on it). If you do have credentials, drop all four OAuth vars into `.env` and restart; the app auto-detects and switches clients.
+
+**Rate limits (unauthenticated):** ~60 requests per minute. NeepFeed's default collection cycle does ~8 requests for 200 subscribed subs, so you're well under the limit with headroom for manual triggers.
+
+Force a specific client with `REDDIT_CLIENT_MODE=mock` (offline dev), `REDDIT_CLIENT_MODE=http`, or `REDDIT_CLIENT_MODE=praw`.
 
 ## Docker (production)
 
@@ -244,7 +243,7 @@ GET    /api/lists/<id>/subreddits
 POST   /api/lists/<id>/subreddits       action: add|remove|toggle
 POST   /api/lists/<id>/subreddits/bulk  {names: [...]}
 PATCH  /api/lists/<id>/subreddits/<name>/weight
-GET    /api/lists/<id>/recommendations  (stub until Reddit API approval)
+GET    /api/lists/<id>/recommendations  (stub — L3 recommender not yet implemented)
 GET    /api/settings
 POST   /api/settings                    partial update
 POST   /api/config/export               → JSON download
@@ -285,10 +284,10 @@ POST   /api/collect/trigger             manual collection run
 ## Status
 
 - Core MVP + lists infrastructure + skin system + M6 polish: **shipped**.
-- Reddit API: **approval pending** — runs against the mock client until creds are set. Docs here use mock examples where relevant.
+- Reddit API: **public JSON endpoints** (no OAuth required). PRAW path retained in case a Reddit app is ever approved; mock available for offline dev.
 - Reviewed + hardened against two external code reviews (April 2026): all verified P1/P2 findings resolved — config import validation, network-first SW for mutable APIs, seen-batch FK safety, FTS input sanitization, feed abort signals + request-generation guard, sort-aware crosspost dedup, PostCard bookmark sync, dev-seed route removed.
 - Deferred (intentionally, until daily-drive feedback):
-  - Recommendation engine (L3) — needs real Reddit API
+  - Recommendation engine (L3) — unblocked now that public JSON endpoints work (`/r/<sub>/about.json` sidebar scraping needs no OAuth); waiting on usage feedback to prioritize.
   - Full list-selector UI (L4) — data model exists, UI waits for usage feedback
 
 ## License
